@@ -1,0 +1,121 @@
+---
+description: Agent testing lifecycle — stop all dev services after every test run, save Playwright screenshots to the canonical path and compare with last run
+alwaysApply: true
+---
+
+# Agent Testing Lifecycle
+
+## 1. Stop all services when testing finishes
+
+Every agent that starts a backend or frontend dev server **must stop it before ending its turn** — whether tests pass or fail.
+
+### How (PowerShell — Windows)
+
+```powershell
+# Stop by port — surgical, leaves IDE helpers untouched
+foreach ($port in 3000, 5000, 5001, 5173, 5180, 8080) {
+    $c = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue
+    if ($c) {
+        Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
+        Write-Output "Stopped PID $($c.OwningProcess) on port $port"
+    }
+}
+```
+
+### Verify nothing is left listening
+
+```powershell
+foreach ($port in 3000, 5000, 5001, 5173, 5180, 8080) {
+    $c = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue
+    if ($c) { Write-Warning "Port $port STILL in use by PID $($c.OwningProcess)" }
+}
+Write-Output "Port check complete"
+```
+
+### Rules
+- Record every PID/port when a server is started.
+- After tests (pass or fail), stop those PIDs.
+- Do NOT kill IDE helper processes — only kill ports 3000/5000/5001/5173/5180/8080.
+- Confirm all dev ports are free before ending the turn.
+
+---
+
+## 2. Playwright screenshot storage and comparison
+
+### Canonical screenshot directory
+
+All Playwright screenshots **must be saved to:**
+```
+D:\Projects\Sarvik\Care-Flow\screenshots\
+```
+
+Subdirectory structure:
+```
+D:\Projects\Sarvik\Care-Flow\screenshots\
+  <YYYY-MM-DD_HH-mm>\        ← one folder per test run (timestamp)
+    <spec-name>\
+      <test-name>.png
+  latest\                    ← symlink/copy of most recent run (overwritten each time)
+    <spec-name>\
+      <test-name>.png
+```
+
+### Configure in playwright.config.js
+
+```js
+const RUN_TS = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
+const SCREENSHOT_DIR = `D:/Projects/Sarvik/Care-Flow/screenshots/${RUN_TS}`;
+
+export default defineConfig({
+  screenshotsPath: SCREENSHOT_DIR,
+  use: {
+    screenshot: 'on',          // always capture
+    screenshotPath: SCREENSHOT_DIR,
+  },
+});
+```
+
+After each run, copy results to `latest\`:
+```powershell
+$latest = "D:\Projects\Sarvik\Care-Flow\screenshots\latest"
+if (Test-Path $latest) { Remove-Item $latest -Recurse -Force }
+Copy-Item -Path $SCREENSHOT_DIR -Destination $latest -Recurse
+```
+
+### Comparison rule — compare with previous run
+
+After tests finish, the agent **must**:
+1. Identify the two most-recent timestamped folders in `D:\Projects\Sarvik\Care-Flow\screenshots\`.
+2. For each screenshot in the new run, check if a matching file exists in the previous run.
+3. If a screenshot is new (no prior match) → log it as **NEW**.
+4. If a screenshot changed (different size or the test name previously passed but now failed) → log it as **CHANGED / REGRESSION**.
+5. Report the comparison summary before ending the turn.
+
+```powershell
+$runs = Get-ChildItem "D:\Projects\Sarvik\Care-Flow\screenshots" -Directory |
+        Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}' } |
+        Sort-Object Name -Descending
+
+if ($runs.Count -ge 2) {
+    $current = $runs[0].FullName
+    $previous = $runs[1].FullName
+    Write-Output "Comparing: $current vs $previous"
+    Get-ChildItem $current -Recurse -Filter "*.png" | ForEach-Object {
+        $rel = $_.FullName.Substring($current.Length)
+        $prev = Join-Path $previous $rel
+        if (-not (Test-Path $prev)) {
+            Write-Output "NEW: $rel"
+        } elseif ((Get-Item $_).Length -ne (Get-Item $prev).Length) {
+            Write-Output "CHANGED: $rel"
+        }
+    }
+} else {
+    Write-Output "No previous run to compare against."
+}
+```
+
+### Rules
+- Always use the canonical path `D:\Projects\Sarvik\Care-Flow\screenshots\`.
+- Never save screenshots inside `dotnet-frontend/e2e/test-results/` as the final store (that is temp; copy to canonical path).
+- Always run the comparison after every test suite and include the diff summary in the turn response.
+- If a previously-passing test now produces a screenshot (i.e. it failed), flag it as a regression.

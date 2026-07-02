@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cureflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: src/CureFlow.Api/Dockerfile
+    depends_on:
+      - postgres
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=cureflow;Username=postgres;Password=postgres"
+      Jwt__Secret: "${JWT_SECRET:-replace-with-64-char-random-secret}"
+      Anthropic__ApiKey: "${ANTHROPIC_API_KEY}"
+      WhatsApp__PhoneNumberId: "${WA_PHONE_NUMBER_ID}"
+      WhatsApp__AccessToken: "${WA_ACCESS_TOKEN}"
+      WhatsApp__AppSecret: "${WA_APP_SECRET}"
+      WhatsApp__VerifyToken: "${WA_VERIFY_TOKEN:-cureflow-webhook-verify-2026}"
+      WhatsApp__Enabled: "${WA_ENABLED:-false}"
+    ports:
+      - "5180:8080"
+
+volumes:
+  pgdata:

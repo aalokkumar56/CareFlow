@@ -1,0 +1,105 @@
+{
+  "project_name": "CureFlow Patient Intake & Retention CRM",
+  "theme": "light",
+  "archetype": "Archetype 1 (Organic & Earthy)",
+  "vibe": "Linear/Superhuman meets Modern Healthcare. Operationally practical, fast, zero-clutter, highly legible.",
+  "colors": {
+    "background": "#FDFDFC",
+    "surface": "#FFFFFF",
+    "border": "#E5E7EB",
+    "border_focus": "#064E3B",
+    "text_primary": "#022C22",
+    "text_secondary": "#4B5563",
+    "text_muted": "#9CA3AF",
+    "primary": "#064E3B",
+    "primary_hover": "#022C22",
+    "primary_foreground": "#FFFFFF",
+    "secondary": "#F3F4F6",
+    "secondary_foreground": "#111827",
+    "accent_whatsapp": "#16A34A",
+    "accent_warning": "#B45309",
+    "accent_danger": "#991B1B",
+    "glass_background": "rgba(255, 255, 255, 0.7)",
+    "glass_border": "rgba(255, 255, 255, 0.4)"
+  },
+  "typography": {
+    "font_heading": "Outfit, sans-serif",
+    "font_body": "IBM Plex Sans, sans-serif",
+    "font_mono": "IBM Plex Mono, monospace",
+    "h1": "text-4xl tracking-tight font-semibold text-primary",
+    "h2": "text-2xl tracking-tight font-semibold text-primary",
+    "h3": "text-xl tracking-tight font-medium text-primary",
+    "h4": "text-sm tracking-[0.1em] uppercase font-semibold text-text_secondary",
+    "body": "text-base leading-relaxed text-text_secondary",
+    "small": "text-sm text-text_muted"
+  },
+  "layout": {
+    "strategy": "The 'Control Room' Grid",
+    "spacing_scale": "Tailwind standard (p-4, p-6, gap-4, gap-6). Generous internal padding for forms, tight grid for dashboards.",
+    "border_radius": "rounded-sm (2px to 4px max) for a sharp, technical SaaS feel.",
+    "container_max_width": "max-w-7xl",
+    "sidebar": "Fixed left sidebar, 260px width, extremely clean with subtle hover states (bg-secondary). No heavy background colors.",
+    "surfaces": "Cardless or Flat Solid. 1px solid border (border-border), NO shadows. Information hierarchy is driven by typography and spacing, not floating cards."
+  },
+  "components": {
+    "buttons": "Flat, rounded-sm, 1px border for secondary buttons. Hover states explicitly change text color and background.",
+    "inputs": "Flat, 1px border, rounded-sm, bg-white. Focus state: ring-2 ring-primary/20 border-primary.",
+    "tables": "Dense, full width, 1px bottom border per row. Hover state on rows. text-sm for data density.",
+    "badges": "rounded-full, very subtle background (e.g., bg-green-50 text-green-700), used for Lead Status.",
+    "modals": "Glassmorphism overlay (backdrop-blur-sm bg-black/20), Modal body is solid white, flat borders, rounded-sm."
+  },
+  "motion": {
+    "hover": "transition-colors duration-200 ease-in-out",
+    "active": "scale-[0.98]",
+    "page_transition": "framer-motion opacity fade-in",
+    "accessibility": "respect prefers-reduced-motion"
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "Regular or Duotone for active states. Keep sizing consistent (w-5 h-5 for inline, w-4 h-4 for dense tables)."
+  },
+  "media": {
+    "images": [
+      {
+        "category": "logo",
+        "description": "Cure & Care Hospital minimal cross and leaf logo",
+        "url": "https://static.prod-images.emergentagent.com/jobs/6650abee-e9ca-4809-bc95-2083338f98c5/images/4acdf9f9ca1c9dcfa4b2235e3e209a02469369954b8c092ef3bda8fd0673a29a.png"
+      },
+      {
+        "category": "background",
+        "description": "Abstract login background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/6650abee-e9ca-4809-bc95-2083338f98c5/images/cbc93e151dd02be7334cfb1572ee6047c7c9fd89f8c76cb7af56e3c53dcb38e1.png"
+      },
+      {
+        "category": "avatar",
+        "description": "Patient Avatar 1",
+        "url": "https://images.unsplash.com/photo-1762733031326-73adceedbe1c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwyfHxpbmRpYW4lMjBwZXJzb24lMjBwb3J0cmFpdCUyMG5ldXRyYWwlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3ODQ4OTA1NHww&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "category": "avatar",
+        "description": "Patient Avatar 2",
+        "url": "https://images.unsplash.com/photo-1759873821340-24189bde9922?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwzfHxpbmRpYW4lMjBwZXJzb24lMjBwb3J0cmFpdCUyMG5ldXRyYWwlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3ODQ4OTA1NHww&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "category": "avatar",
+        "description": "Patient Avatar 3",
+        "url": "https://images.unsplash.com/photo-1758600587839-56ba05596c69?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHw0fHxpbmRpYW4lMjBwZXJzb24lMjBwb3J0cmFpdCUyMG5ldXRyYWwlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3ODQ4OTA1NHww&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "category": "avatar",
+        "description": "Patient Avatar 4",
+        "url": "https://images.unsplash.com/photo-1758782213287-0120f0c8f82d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHxpbmRpYW4lMjBwZXJzb24lMjBwb3J0cmFpdCUyMG5ldXRyYWwlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3ODQ4OTA1NHww&ixlib=rb-4.1.0&q=85"
+      }
+    ]
+  },
+  "testing": {
+    "data_testid_requirement": "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='login-submit-button')."
+  },
+  "instructions_to_main_agent": [
+    "Use Phosphor icons via @phosphor-icons/react. Add to package.json if missing.",
+    "Do NOT use pure #000000. Text must be the primary dark forest green (#022C22) or dark gray.",
+    "Do not use box-shadows on standard cards/widgets. Rely on 1px borders and spacing.",
+    "Maintain high density in the dashboard views, similar to Linear or Superhuman. Use small fonts (text-sm) for data grids.",
+    "Ensure the WhatsApp inbox view looks familiar (green accents, chat bubbles) but aligns with the clean SaaS vibe."
+  ]
+}

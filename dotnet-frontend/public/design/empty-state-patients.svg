@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" fill="none" role="img" aria-label="No patients">
+  <rect width="240" height="180" rx="16" fill="#FDFDFC"/>
+  <circle cx="120" cy="68" r="28" fill="#E5E7EB"/>
+  <circle cx="120" cy="58" r="12" fill="#9CA3AF"/>
+  <path d="M88 98c0-12 14-18 32-18s32 6 32 18" fill="#9CA3AF"/>
+  <rect x="52" y="118" width="136" height="10" rx="5" fill="#E5E7EB"/>
+  <rect x="72" y="136" width="96" height="8" rx="4" fill="#F3F4F6"/>
+  <circle cx="168" cy="52" r="16" fill="#064E3B" opacity="0.12"/>
+  <path d="M168 44v16M160 52h16" stroke="#064E3B" stroke-width="2" stroke-linecap="round"/>
+</svg>

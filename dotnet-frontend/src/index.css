@@ -1,0 +1,347 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* CureFlow forest green theme */
+    --background: 60 7% 99%;          /* #FDFDFC */
+    --foreground: 168 79% 9%;          /* #022C22 */
+    --card: 0 0% 100%;
+    --card-foreground: 168 79% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 168 79% 9%;
+    --primary: 162 79% 17%;            /* #064E3B */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;          /* #F3F4F6 */
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;    /* #6B7280 */
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 70% 35%;          /* #991B1B */
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;             /* #E5E7EB */
+    --input: 220 13% 91%;
+    --ring: 162 79% 17%;
+    --radius: 0.75rem;
+
+    /* CureFlow custom semantic */
+    --whatsapp: 142 71% 35%;           /* #16A34A */
+    --warning: 31 90% 36%;             /* #B45309 */
+    --danger: 0 70% 35%;
+    --success: 142 71% 35%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  p {
+    line-height: 1.5;
+  }
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(6, 78, 59, 0.35);
+  }
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(6, 78, 59, 0.35);
+  }
+  h1, h2, h3, h4, h5, h6, .font-heading {
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: -0.01em;
+  }
+  .font-mono, code, kbd {
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  ::selection {
+    background-color: hsl(var(--primary) / 0.15);
+    color: hsl(var(--primary));
+  }
+}
+
+@layer utilities {
+  .text-text-primary { color: #022C22; }
+  .text-text-secondary { color: #4B5563; }
+  .text-text-muted { color: #9CA3AF; }
+  .bg-primary-soft { background-color: rgba(6, 78, 59, 0.06); }
+  .text-primary-deep { color: #022C22; }
+  .bg-whatsapp { background-color: #16A34A; }
+  .text-whatsapp { color: #16A34A; }
+  .border-subtle { border-color: #E5E7EB; }
+  .ring-focus { box-shadow: 0 0 0 3px rgba(6, 78, 59, 0.12); }
+
+  /* Glassmorphism — CureFlow dashboard mockup (pixel match) */
+  .mesh-gradient-bg {
+    background:
+      radial-gradient(ellipse 75% 55% at 50% -8%, rgba(255, 214, 140, 0.72) 0%, rgba(255, 196, 120, 0.38) 28%, transparent 62%),
+      radial-gradient(ellipse 65% 55% at 50% 100%, rgba(191, 219, 254, 0.42) 0%, rgba(147, 197, 253, 0.22) 45%, transparent 72%),
+      radial-gradient(ellipse 60% 50% at 0% 100%, rgba(186, 230, 253, 0.52) 0%, rgba(125, 211, 252, 0.28) 38%, transparent 68%),
+      radial-gradient(ellipse 65% 55% at 8% 15%, rgba(186, 200, 255, 0.55) 0%, transparent 52%),
+      radial-gradient(ellipse 70% 60% at 92% 75%, rgba(216, 180, 254, 0.5) 0%, transparent 55%),
+      radial-gradient(ellipse 55% 45% at 75% 25%, rgba(199, 210, 254, 0.4) 0%, transparent 50%),
+      linear-gradient(175deg, #EDE9FE 0%, #F3E8FF 28%, #FAF5FF 55%, #EFF6FF 88%, #E0F2FE 100%);
+  }
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 8px 32px rgba(139, 92, 246, 0.08);
+  }
+  .glass-card {
+    background: rgba(255, 255, 255, 0.26);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 8px 32px rgba(139, 92, 246, 0.07);
+    border-radius: 24px;
+  }
+  .dashboard-glass-card {
+    background: rgba(255, 255, 255, 0.28);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.52);
+    box-shadow: 0 6px 24px rgba(139, 92, 246, 0.07);
+    border-radius: 20px;
+  }
+  .dashboard-stat-card {
+    background: rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.08);
+    border-radius: 1rem;
+    padding: 0.5rem 0.625rem;
+    min-height: 4.25rem;
+  }
+  .dashboard-stat-card--compact {
+    padding: 0.375rem 0.5rem;
+    min-height: 0;
+    border-radius: 0.875rem;
+  }
+  .dashboard-main-grid {
+    display: grid;
+    grid-template-columns: 7fr 5fr;
+    --dashboard-bottom-h: 132px;
+    grid-template-rows: minmax(0, 1fr) var(--dashboard-bottom-h);
+    gap: 1rem 0.625rem;
+    min-height: 0;
+    flex: 1;
+  }
+  .dashboard-cell-top-left,
+  .dashboard-cell-top-right {
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    padding-bottom: calc(0.75rem + 11px);
+  }
+  .dashboard-cell-bottom-left {
+    min-height: var(--dashboard-bottom-h);
+    height: 100%;
+    overflow: hidden;
+  }
+  .dashboard-cell-bottom-right {
+    min-height: var(--dashboard-bottom-h);
+    height: 100%;
+  }
+  .dashboard-revenue-inner {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .dashboard-revenue-chart {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 72px;
+    height: 100%;
+    align-self: stretch;
+  }
+  .dashboard-page {
+    width: 100%;
+  }
+
+  /* Tablet & mobile: stacked cards, scrollable page */
+  @media (max-width: 1279px) {
+    .dashboard-main-grid {
+      grid-template-columns: 1fr;
+      grid-template-rows: none;
+      height: auto;
+      min-height: 0;
+    }
+    .dashboard-cell-top-left,
+    .dashboard-cell-top-right {
+      min-height: clamp(200px, 34vh, 320px);
+      height: auto;
+      padding-bottom: 0.75rem;
+    }
+    .dashboard-cell-bottom-left {
+      min-height: clamp(128px, 18vh, 180px);
+      height: auto;
+    }
+    .dashboard-cell-bottom-right {
+      min-height: auto;
+      height: auto;
+    }
+  }
+
+  @media (max-width: 639px) {
+    .dashboard-cell-top-left,
+    .dashboard-cell-top-right {
+      min-height: clamp(180px, 30vh, 260px);
+    }
+    .dashboard-stat-card {
+      min-height: 5rem;
+      padding: 0.625rem 0.75rem;
+    }
+  }
+
+  /* Large desktop (1080p–1440p) */
+  @media (min-width: 1920px) {
+    .dashboard-page {
+      max-width: min(2200px, 92vw);
+      margin-inline: auto;
+    }
+    .dashboard-main-grid {
+      --dashboard-bottom-h: clamp(132px, 7vh, 160px);
+    }
+  }
+
+  /* QHD / ultra-wide */
+  @media (min-width: 2560px) {
+    .dashboard-page {
+      max-width: min(2800px, 88vw);
+      padding-inline: clamp(1.25rem, 2vw, 3rem);
+    }
+    .dashboard-main-grid {
+      --dashboard-bottom-h: clamp(132px, 6vh, 180px);
+      gap: clamp(1rem, 1.2vw, 1.75rem) clamp(0.75rem, 1vw, 1.5rem);
+    }
+    .dashboard-stat-card {
+      min-height: clamp(5.5rem, 5vh, 7rem);
+      padding: clamp(0.75rem, 0.8vw, 1.25rem) clamp(0.875rem, 0.9vw, 1.375rem);
+    }
+    .dashboard-glass-card {
+      border-radius: clamp(20px, 1.1vw, 28px);
+    }
+  }
+
+  /* 4K / large displays (up to ~64") */
+  @media (min-width: 3840px) {
+    .dashboard-page {
+      max-width: min(3400px, 85vw);
+    }
+    .dashboard-main-grid {
+      --dashboard-bottom-h: clamp(148px, 5.5vh, 200px);
+    }
+  }
+  .glass-sidebar {
+    background: rgba(255, 255, 255, 0.24);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.48);
+    box-shadow: 0 8px 40px rgba(139, 92, 246, 0.1);
+    border-radius: 24px;
+  }
+  .glass-header {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  .glass-input {
+    background: rgba(255, 255, 255, 0.38);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 9999px;
+    box-shadow: 0 2px 10px rgba(139, 92, 246, 0.06);
+  }
+  .sidebar-nav-active {
+    background: rgba(6, 78, 59, 0.08);
+    color: #064E3B;
+    font-weight: 600;
+    border: 1px solid rgba(6, 78, 59, 0.12);
+    border-left: 3px solid #064E3B;
+    box-shadow: none;
+    transform: none;
+  }
+  .solid-card {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 0.75rem;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .btn-primary {
+    @apply bg-[#064E3B] hover:bg-[#022C22] text-white rounded-xl h-9 text-[13px] font-medium shadow-sm;
+  }
+
+  /* Custom scrollbar */
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #E5E7EB; border-radius: 3px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+
+  /* App typography scale — prefer these over ad-hoc text-[Npx] */
+  .text-ui-caption { font-size: 10px; line-height: 1.35; }
+  .text-ui-label { font-size: 11px; line-height: 1.4; }
+  .text-ui-sm { font-size: 12px; line-height: 1.45; }
+  .text-ui-base { font-size: 13px; line-height: 1.5; }
+  .text-ui-md { font-size: 14px; line-height: 1.5; }
+  .text-ui-stat { font-size: 1.125rem; line-height: 1.1; }
+  .text-ui-stat-lg { font-size: 1.25rem; line-height: 1.1; }
+
+  /* Compact status / tag pills — use via StatusPill or .status-pill */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    font-size: 9px;
+    line-height: 1.2;
+    padding: 1px 5px;
+    border-radius: 9999px;
+    border-width: 1px;
+    border-style: solid;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+  .badge-count {
+    font-size: 9px;
+    line-height: 1.2;
+    padding: 1px 5px;
+    border-radius: 9999px;
+    font-weight: 600;
+  }
+
+  /* Dense data tables */
+  .table-dense th, .table-dense td {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .table-dense th {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: #4B5563;
+  }
+  
+  /* Animation respect */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+}

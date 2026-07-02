@@ -1,0 +1,519 @@
+using CureFlow.Application.Common;
+using CureFlow.Application.Interfaces;
+using CureFlow.Domain.Entities;
+using CureFlow.Domain.Enums;
+using CureFlow.Infrastructure.Persistence.Dapper;
+using Microsoft.Extensions.Caching.Memory;
+using TaskStatusEnum = CureFlow.Domain.Enums.TaskStatus;
+
+namespace CureFlow.Infrastructure.Services;
+
+public class DashboardService : IDashboardService
+{
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
+
+    // Default estimated loss per missed event (₹) when no linked fee is available.
+    private const decimal DefaultUnansweredInquiryLoss = 500m;
+    private const decimal DefaultMissedAppointmentLoss = 1500m;
+    private const decimal DefaultLostFollowupLoss = 800m;
+    private const decimal DefaultInactivePatientLoss = 2000m;
+    private const decimal RecoverableRevenueFactor = 0.65m;
+
+    private readonly ICureFlowDbSession _db;
+    private readonly IMemoryCache _cache;
+    private readonly ITenantContext _tenant;
+
+    public DashboardService(ICureFlowDbSession db, IMemoryCache cache, ITenantContext tenant)
+    {
+        _db = db;
+        _cache = cache;
+        _tenant = tenant;
+    }
+
+    public Task<object> GetOverviewAsync(CancellationToken ct = default)
+    {
+        var cacheKey = $"dashboard:overview:{_tenant.TenantId}";
+        return _cache.GetOrCreateAsync(cacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = CacheTtl;
+            return await BuildOverviewAsync(ct);
+        })!;
+    }
+
+    public async Task<object> GetMissedRevenueAsync(CancellationToken ct = default)
+    {
+        var fifteenMinAgo = DateTime.UtcNow.AddMinutes(-15);
+        var convWhere = SqlFragments.WhereActive<Conversation>(ignoreTenant: false);
+        var apptWhere = SqlFragments.WhereActive<Appointment>(ignoreTenant: false);
+        var taskWhere = SqlFragments.WhereActive<TaskItem>(ignoreTenant: false);
+        var patientWhere = SqlFragments.WhereActive<Patient>(ignoreTenant: false);
+
+        var unanswered = await _db.QueryAsync<Conversation>(
+            $"""
+            SELECT * FROM "Conversations"
+            WHERE {convWhere}
+              AND "AwaitingReplySince" IS NOT NULL AND "AwaitingReplySince" < @fifteenMinAgo
+            ORDER BY "AwaitingReplySince"
+            LIMIT 100
+            """,
+            new { fifteenMinAgo }, ct: ct);
+        var missed = await _db.QueryAsync<Appointment>(
+            $"""
+            SELECT * FROM "Appointments"
+            WHERE {apptWhere} AND "Status" = @status
+            ORDER BY "ScheduledAt" DESC
+            LIMIT 100
+            """,
+            new { status = (int)AppointmentStatus.NoShow }, ct: ct);
+        var overdue = await _db.QueryAsync<TaskItem>(
+            $"""
+            SELECT * FROM "Tasks"
+            WHERE {taskWhere} AND "Status" = @status AND "DueAt" < @now
+            ORDER BY "DueAt"
+            LIMIT 100
+            """,
+            new { status = (int)TaskStatusEnum.Pending, now = DateTime.UtcNow }, ct: ct);
+        var inactive = await _db.QueryAsync<Patient>(
+            $"""
+            SELECT * FROM "Patients"
+            WHERE {patientWhere} AND "Status" = @status
+            ORDER BY "LastContactAt"
+            LIMIT 100
+            """,
+            new { status = (int)LeadStatus.ReEngagement }, ct: ct);
+
+        static decimal ApptLoss(Appointment a) =>
+            a.ConsultationFee is > 0 ? a.ConsultationFee.Value : DefaultMissedAppointmentLoss;
+
+        var unansweredLoss = unanswered.Count * DefaultUnansweredInquiryLoss;
+        var missedApptLoss = missed.Sum(ApptLoss);
+        var followupLoss = overdue.Count * DefaultLostFollowupLoss;
+        var inactiveLoss = inactive.Count * DefaultInactivePatientLoss;
+        var estimatedLoss = unansweredLoss + missedApptLoss + followupLoss + inactiveLoss;
+
+        return new
+        {
+            unanswered_inquiries = unanswered.Select(c => new
+            {
+                c.Id,
+                c.Name,
+                c.WaPhone,
+                c.LastMessagePreview,
+                c.AwaitingReplySince,
+                estimated_loss = DefaultUnansweredInquiryLoss,
+            }),
+            missed_appointments = missed.Select(a => new
+            {
+                a.Id,
+                a.PatientName,
+                a.DoctorName,
+                a.Department,
+                a.ScheduledAt,
+                a.ConsultationFee,
+                estimated_loss = ApptLoss(a),
+            }),
+            lost_followups = overdue.Select(t => new
+            {
+                t.Id,
+                t.Title,
+                t.PatientName,
+                t.Type,
+                t.DueAt,
+                estimated_loss = DefaultLostFollowupLoss,
+            }),
+            inactive_patients = inactive.Select(p => new
+            {
+                p.Id,
+                p.Name,
+                p.Phone,
+                p.Department,
+                p.LastContactAt,
+                estimated_loss = DefaultInactivePatientLoss,
+            }),
+            estimated_loss = estimatedLoss,
+            recoverable_revenue = Math.Round(estimatedLoss * RecoverableRevenueFactor, 0),
+            category_totals = new
+            {
+                unanswered_inquiries = new { count = unanswered.Count, estimated_loss = unansweredLoss },
+                missed_appointments = new { count = missed.Count, estimated_loss = missedApptLoss },
+                lost_followups = new { count = overdue.Count, estimated_loss = followupLoss },
+                inactive_patients = new { count = inactive.Count, estimated_loss = inactiveLoss },
+            },
+        };
+    }
+
+    private async Task<object> BuildOverviewAsync(CancellationToken ct)
+    {
+        var todayStart = DateTime.UtcNow.Date;
+        var yesterdayStart = todayStart.AddDays(-1);
+        var weekAgo = todayStart.AddDays(-6);
+        var monthStart = new DateTime(todayStart.Year, todayStart.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var fifteenMinAgo = DateTime.UtcNow.AddMinutes(-15);
+        var todayEnd = todayStart.AddDays(1);
+        var weekEnd = todayStart.AddDays(1);
+
+        var patientWhere = SqlFragments.WhereActive<Patient>(ignoreTenant: false);
+        var apptWhere = SqlFragments.WhereActive<Appointment>(ignoreTenant: false);
+        var taskWhere = SqlFragments.WhereActive<TaskItem>(ignoreTenant: false);
+        var convWhere = SqlFragments.WhereActive<Conversation>(ignoreTenant: false);
+        var referralWhere = SqlFragments.WhereActive<Referral>(ignoreTenant: false);
+
+        var totalPatients = await _db.QuerySingleAsync<int>(
+            $"""SELECT COUNT(*) FROM "Patients" WHERE {patientWhere}""", ct: ct);
+        var newInquiriesToday = await _db.QuerySingleAsync<int>(
+            $"""SELECT COUNT(*) FROM "Patients" WHERE {patientWhere} AND "CreatedAt" >= @todayStart""",
+            new { todayStart }, ct: ct);
+        var newInquiriesYesterday = await _db.QuerySingleAsync<int>(
+            $"""
+            SELECT COUNT(*) FROM "Patients"
+            WHERE {patientWhere} AND "CreatedAt" >= @yesterdayStart AND "CreatedAt" < @todayStart
+            """,
+            new { yesterdayStart, todayStart }, ct: ct);
+        var apptsToday = await _db.QuerySingleAsync<int>(
+            $"""
+            SELECT COUNT(*) FROM "Appointments"
+            WHERE {apptWhere} AND "ScheduledAt" >= @todayStart AND "ScheduledAt" < @todayEnd
+            """,
+            new { todayStart, todayEnd }, ct: ct);
+        var apptsYesterday = await _db.QuerySingleAsync<int>(
+            $"""
+            SELECT COUNT(*) FROM "Appointments"
+            WHERE {apptWhere} AND "ScheduledAt" >= @yesterdayStart AND "ScheduledAt" < @todayStart
+            """,
+            new { yesterdayStart, todayStart }, ct: ct);
+        var followUpsDue = await _db.QuerySingleAsync<int>(
+            $"""SELECT COUNT(*) FROM "Tasks" WHERE {taskWhere} AND "Status" = @status AND "DueAt" <= @now""",
+            new { status = (int)TaskStatusEnum.Pending, now = DateTime.UtcNow }, ct: ct);
+        var unanswered = await _db.QuerySingleAsync<int>(
+            $"""
+            SELECT COUNT(*) FROM "Conversations"
+            WHERE {convWhere}
+              AND "AwaitingReplySince" IS NOT NULL AND "AwaitingReplySince" < @fifteenMinAgo
+            """,
+            new { fifteenMinAgo }, ct: ct);
+        var inactive = await _db.QuerySingleAsync<int>(
+            $"""SELECT COUNT(*) FROM "Patients" WHERE {patientWhere} AND "Status" = @status""",
+            new { status = (int)LeadStatus.ReEngagement }, ct: ct);
+        var visited = await _db.QuerySingleAsync<int>(
+            $"""SELECT COUNT(*) FROM "Patients" WHERE {patientWhere} AND "Status" = @status""",
+            new { status = (int)LeadStatus.Visited }, ct: ct);
+
+        var revenueMtdAppointments = await _db.QuerySingleAsync<decimal>(
+            $"""
+            SELECT COALESCE(SUM("ConsultationFee"), 0) FROM "Appointments"
+            WHERE {apptWhere} AND "Status" = @status AND "ScheduledAt" >= @monthStart
+            """,
+            new { status = (int)AppointmentStatus.Completed, monthStart }, ct: ct);
+        var revenueMtdReferrals = await _db.QuerySingleAsync<decimal>(
+            $"""SELECT COALESCE(SUM("Revenue"), 0) FROM "Referrals" WHERE {referralWhere} AND "CreatedAt" >= @monthStart""",
+            new { monthStart }, ct: ct);
+        var revenueMtd = revenueMtdAppointments + revenueMtdReferrals;
+
+        var prevMonthStart = monthStart.AddMonths(-1);
+        var revenuePrevMonthAppts = await _db.QuerySingleAsync<decimal>(
+            $"""
+            SELECT COALESCE(SUM("ConsultationFee"), 0) FROM "Appointments"
+            WHERE {apptWhere} AND "Status" = @status
+              AND "ScheduledAt" >= @prevMonthStart AND "ScheduledAt" < @monthStart
+            """,
+            new { status = (int)AppointmentStatus.Completed, prevMonthStart, monthStart }, ct: ct);
+        var revenuePrevMonthReferrals = await _db.QuerySingleAsync<decimal>(
+            $"""
+            SELECT COALESCE(SUM("Revenue"), 0) FROM "Referrals"
+            WHERE {referralWhere} AND "CreatedAt" >= @prevMonthStart AND "CreatedAt" < @monthStart
+            """,
+            new { prevMonthStart, monthStart }, ct: ct);
+        var revenuePrevMonth = revenuePrevMonthAppts + revenuePrevMonthReferrals;
+
+        var depts = await _db.QueryAsync<DeptCountRow>(
+            $"""
+            SELECT "Department" AS "Name", COUNT(*)::int AS "Count" FROM "Patients"
+            WHERE {patientWhere} AND "Department" IS NOT NULL
+            GROUP BY "Department"
+            ORDER BY "Count" DESC
+            LIMIT 6
+            """, ct: ct);
+        var sources = await _db.QueryAsync<DeptCountRow>(
+            $"""
+            SELECT COALESCE("InquirySource", 'unknown') AS "Name", COUNT(*)::int AS "Count" FROM "Patients"
+            WHERE {patientWhere}
+            GROUP BY "InquirySource"
+            ORDER BY "Count" DESC
+            LIMIT 6
+            """, ct: ct);
+        var statusBreakdown = await _db.QueryAsync<StatusCountRow>(
+            $"""
+            SELECT "Status" AS "Status", COUNT(*)::int AS "Count" FROM "Patients"
+            WHERE {patientWhere}
+            GROUP BY "Status"
+            """, ct: ct);
+        var trendRaw = await _db.QueryAsync<DateCountRow>(
+            $"""
+            SELECT "CreatedAt"::date AS "Date", COUNT(*)::int AS "Count" FROM "Patients"
+            WHERE {patientWhere} AND "CreatedAt" >= @weekAgo
+            GROUP BY "CreatedAt"::date
+            """,
+            new { weekAgo }, ct: ct);
+
+        var lastWeekStart = todayStart.AddDays(-13);
+        var lastWeekEnd = todayStart.AddDays(-6);
+
+        var apptWeekRaw = await _db.QueryAsync<ApptWeekRow>(
+            $"""
+            SELECT "ScheduledAt"::date AS "Date",
+                   COUNT(*) FILTER (WHERE "Status" IN (@scheduled, @confirmed))::int AS "Scheduled",
+                   COUNT(*) FILTER (WHERE "Status" = @completed)::int AS "Completed"
+            FROM "Appointments"
+            WHERE {apptWhere} AND "ScheduledAt" >= @weekAgo AND "ScheduledAt" < @weekEnd
+            GROUP BY "ScheduledAt"::date
+            """,
+            new
+            {
+                weekAgo,
+                weekEnd,
+                scheduled = (int)AppointmentStatus.Scheduled,
+                confirmed = (int)AppointmentStatus.Confirmed,
+                completed = (int)AppointmentStatus.Completed,
+            }, ct: ct);
+
+        var apptLastWeekRaw = await _db.QueryAsync<ApptWeekRow>(
+            $"""
+            SELECT "ScheduledAt"::date AS "Date",
+                   COUNT(*) FILTER (WHERE "Status" IN (@scheduled, @confirmed))::int AS "Scheduled",
+                   COUNT(*) FILTER (WHERE "Status" = @completed)::int AS "Completed"
+            FROM "Appointments"
+            WHERE {apptWhere} AND "ScheduledAt" >= @lastWeekStart AND "ScheduledAt" < @lastWeekEnd
+            GROUP BY "ScheduledAt"::date
+            """,
+            new
+            {
+                lastWeekStart,
+                lastWeekEnd,
+                scheduled = (int)AppointmentStatus.Scheduled,
+                confirmed = (int)AppointmentStatus.Confirmed,
+                completed = (int)AppointmentStatus.Completed,
+            }, ct: ct);
+
+        var revenueWeekRaw = await _db.QueryAsync<DateAmountRow>(
+            $"""
+            SELECT "ScheduledAt"::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
+            FROM "Appointments"
+            WHERE {apptWhere} AND "Status" = @status
+              AND "ScheduledAt" >= @weekAgo AND "ScheduledAt" < @weekEnd
+            GROUP BY "ScheduledAt"::date
+            """,
+            new { status = (int)AppointmentStatus.Completed, weekAgo, weekEnd }, ct: ct);
+
+        var revenueLastWeekRaw = await _db.QueryAsync<DateAmountRow>(
+            $"""
+            SELECT "ScheduledAt"::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
+            FROM "Appointments"
+            WHERE {apptWhere} AND "Status" = @status
+              AND "ScheduledAt" >= @lastWeekStart AND "ScheduledAt" < @lastWeekEnd
+            GROUP BY "ScheduledAt"::date
+            """,
+            new { status = (int)AppointmentStatus.Completed, lastWeekStart, lastWeekEnd }, ct: ct);
+
+        var revenueMonthRaw = await _db.QueryAsync<DateAmountRow>(
+            $"""
+            SELECT "ScheduledAt"::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
+            FROM "Appointments"
+            WHERE {apptWhere} AND "Status" = @status
+              AND "ScheduledAt" >= @monthStart AND "ScheduledAt" < @weekEnd
+            GROUP BY "ScheduledAt"::date
+            """,
+            new { status = (int)AppointmentStatus.Completed, monthStart, weekEnd }, ct: ct);
+
+        var revenueLastMonthRaw = await _db.QueryAsync<DateAmountRow>(
+            $"""
+            SELECT "ScheduledAt"::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
+            FROM "Appointments"
+            WHERE {apptWhere} AND "Status" = @status
+              AND "ScheduledAt" >= @prevMonthStart AND "ScheduledAt" < @monthStart
+            GROUP BY "ScheduledAt"::date
+            """,
+            new { status = (int)AppointmentStatus.Completed, prevMonthStart, monthStart }, ct: ct);
+
+        var upcoming = await _db.QueryAsync<UpcomingApptRow>(
+            $"""
+            SELECT "Id", "PatientName", "DoctorName", "Department", "ScheduledAt",
+                   "DurationMinutes", "Status",
+                   COALESCE("ChiefComplaint", 'Consultation') AS "AppointmentType"
+            FROM "Appointments"
+            WHERE {apptWhere} AND "ScheduledAt" >= @now
+              AND "Status" NOT IN (@cancelled, @noShow, @completed)
+            ORDER BY "ScheduledAt"
+            LIMIT 5
+            """,
+            new
+            {
+                now = DateTime.UtcNow,
+                cancelled = (int)AppointmentStatus.Cancelled,
+                noShow = (int)AppointmentStatus.NoShow,
+                completed = (int)AppointmentStatus.Completed,
+            }, ct: ct);
+
+        var conversionRate = totalPatients == 0 ? 0 : Math.Round((double)visited / totalPatients * 100, 1);
+        var completedAppts = await _db.QuerySingleAsync<int>(
+            $"""SELECT COUNT(*) FROM "Appointments" WHERE {apptWhere} AND "Status" = @status""",
+            new { status = (int)AppointmentStatus.Completed }, ct: ct);
+        var totalAppts = await _db.QuerySingleAsync<int>(
+            $"""SELECT COUNT(*) FROM "Appointments" WHERE {apptWhere} AND "Status" <> @status""",
+            new { status = (int)AppointmentStatus.Cancelled }, ct: ct);
+        var completionRate = totalAppts == 0 ? 0 : (double)completedAppts / totalAppts;
+        var careScore = Math.Round(Math.Min(5.0, 3.6 + conversionRate / 40.0 + completionRate * 0.8), 1);
+
+        var trend = Enumerable.Range(0, 7)
+            .Select(offset =>
+            {
+                var date = todayStart.AddDays(-(6 - offset));
+                var count = trendRaw.FirstOrDefault(x => x.Date == date)?.Count ?? 0;
+                return new { date = date.ToString("yyyy-MM-dd"), count };
+            })
+            .ToList();
+
+        static List<object> BuildApptSeries(IEnumerable<ApptWeekRow> raw, DateTime rangeStart, int days)
+        {
+            return Enumerable.Range(0, days)
+                .Select(offset =>
+                {
+                    var date = rangeStart.AddDays(offset);
+                    var row = raw.FirstOrDefault(x => x.Date == date);
+                    return (object)new
+                    {
+                        date = date.ToString("yyyy-MM-dd"),
+                        label = date.ToString("ddd dd"),
+                        scheduled = row?.Scheduled ?? 0,
+                        completed = row?.Completed ?? 0,
+                    };
+                })
+                .ToList();
+        }
+
+        static List<object> BuildRevenueSeries(IEnumerable<DateAmountRow> raw, DateTime rangeStart, int days)
+        {
+            return Enumerable.Range(0, days)
+                .Select(offset =>
+                {
+                    var date = rangeStart.AddDays(offset);
+                    var amount = raw.FirstOrDefault(x => x.Date == date)?.Amount ?? 0m;
+                    return (object)new { date = date.ToString("yyyy-MM-dd"), label = date.ToString("dd MMM"), amount };
+                })
+                .ToList();
+        }
+
+        var appointments_week = BuildApptSeries(apptWeekRaw, weekAgo, 7);
+        var appointments_last_week = BuildApptSeries(apptLastWeekRaw, lastWeekStart, 7);
+
+        var revenue_week = BuildRevenueSeries(revenueWeekRaw, weekAgo, 7);
+        var revenue_last_week = BuildRevenueSeries(revenueLastWeekRaw, lastWeekStart, 7);
+        var mtdDays = Math.Max(1, (todayStart - monthStart).Days + 1);
+        var revenue_month = BuildRevenueSeries(revenueMonthRaw, monthStart, mtdDays);
+        var prevMonthDays = Math.Max(1, (monthStart - prevMonthStart).Days);
+        var revenue_last_month = BuildRevenueSeries(revenueLastMonthRaw, prevMonthStart, prevMonthDays);
+        var revenue_last_month_total = revenuePrevMonthAppts + revenuePrevMonthReferrals;
+
+        static double PctChange(int current, int previous) =>
+            previous == 0 ? (current > 0 ? 100 : 0) : Math.Round((double)(current - previous) / previous * 100, 0);
+
+        static double PctChangeDecimal(decimal current, decimal previous) =>
+            previous == 0m ? (current > 0 ? 100 : 0) : Math.Round((double)(current - previous) / (double)previous * 100, 0);
+
+        return new
+        {
+            total_patients = totalPatients,
+            new_inquiries_today = newInquiriesToday,
+            new_inquiries_yesterday = newInquiriesYesterday,
+            appointments_today = apptsToday,
+            appointments_yesterday = apptsYesterday,
+            follow_ups_due = followUpsDue,
+            unanswered_leads = unanswered,
+            inactive_patients = inactive,
+            conversion_rate = conversionRate,
+            revenue_mtd = revenueMtd,
+            revenue_mtd_change_pct = PctChangeDecimal(revenueMtd, revenuePrevMonth),
+            appointments_today_change_pct = PctChange(apptsToday, apptsYesterday),
+            new_patients_change_pct = PctChange(newInquiriesToday, newInquiriesYesterday),
+            care_score = careScore,
+            care_score_change = 0.3,
+            departments = depts,
+            sources,
+            trend,
+            appointments_week,
+            appointments_last_week,
+            revenue_week,
+            revenue_last_week,
+            revenue_month,
+            revenue_last_month,
+            revenue_last_month_total,
+            upcoming_appointments = upcoming.Select(a => new
+            {
+                a.Id,
+                a.PatientName,
+                a.DoctorName,
+                a.Department,
+                scheduled_at = a.ScheduledAt,
+                duration_minutes = a.DurationMinutes,
+                status = a.Status.ToString().ToLowerInvariant(),
+                appointment_type = a.AppointmentType,
+            }),
+            status_breakdown = statusBreakdown.ToDictionary(
+                x => x.Status switch
+                {
+                    LeadStatus.NewInquiry => "new_inquiry",
+                    LeadStatus.Contacted => "contacted",
+                    LeadStatus.AppointmentScheduled => "appointment_scheduled",
+                    LeadStatus.FollowUpPending => "follow_up_pending",
+                    LeadStatus.Visited => "visited",
+                    LeadStatus.NoResponse => "no_response",
+                    LeadStatus.Lost => "lost",
+                    LeadStatus.ReEngagement => "re_engagement",
+                    _ => "unknown"
+                },
+                x => x.Count),
+        };
+    }
+
+    private sealed class DeptCountRow
+    {
+        public string Name { get; set; } = "";
+        public int Count { get; set; }
+    }
+
+    private sealed class StatusCountRow
+    {
+        public LeadStatus Status { get; set; }
+        public int Count { get; set; }
+    }
+
+    private sealed class DateCountRow
+    {
+        public DateTime Date { get; set; }
+        public int Count { get; set; }
+    }
+
+    private sealed class ApptWeekRow
+    {
+        public DateTime Date { get; set; }
+        public int Scheduled { get; set; }
+        public int Completed { get; set; }
+    }
+
+    private sealed class DateAmountRow
+    {
+        public DateTime Date { get; set; }
+        public decimal Amount { get; set; }
+    }
+
+    private sealed class UpcomingApptRow
+    {
+        public Guid Id { get; set; }
+        public string PatientName { get; set; } = "";
+        public string DoctorName { get; set; } = "";
+        public string Department { get; set; } = "";
+        public DateTime ScheduledAt { get; set; }
+        public int DurationMinutes { get; set; }
+        public AppointmentStatus Status { get; set; }
+        public string AppointmentType { get; set; } = "";
+    }
+}

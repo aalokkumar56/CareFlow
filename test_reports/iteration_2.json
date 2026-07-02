@@ -1,0 +1,56 @@
+{
+  "summary": "Phase 2 (Doctor Referral CRM, Campaign Broadcasting, Hospital Profile auto-import) tested end-to-end. Backend: 24/25 pytest tests pass (one real bug found in /campaigns/{id}/send). Frontend: all new routes (/doctors, /doctors/:id, /campaigns, /campaigns/:id, Settings hospital profile, Patients new-patient with referring doctor) render correctly with full data. Hospital website auto-import from https://cureandcarehospital.in worked: 11 departments, 14 services, 6 FAQs populated. Sidebar has Referral CRM + Campaigns nav items.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/campaigns/{id}/send",
+        "issue": "Returns 500 (Internal Server Error) when any audience patient has department=None. Root cause: server.py line 1082 calls c['message_body'].replace('{department}', p.get('department', '')) but p.get('department', '') returns None (not '') when the key exists with a None value. str.replace requires a string argument. Fix: use (p.get('department') or '') instead of p.get('department', ''). Same risk for {name} replacement.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Dashboard trend chart",
+        "issues": ["Recharts emits width(-1)/height(-1) warning on initial mount (cosmetic, carry-over from iter 1)"]
+      },
+      {
+        "screen": "Doctors list",
+        "issues": ["Test data accumulation: 8 TEST_DrKapoor_* rows from repeated pytest runs visible alongside the 5 seeded real doctors. Suggest a cleanup script or DELETE-on-teardown fixture."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_phase2.xml"
+  ],
+  "action_items": [
+    "Fix POST /api/campaigns/{id}/send 500 when patient.department is None. In server.py line 1082, change `.replace('{department}', p.get('department', ''))` to `.replace('{department}', p.get('department') or '')` and similarly for `{name}`. This is the only failing test out of 25.",
+    "(Optional) Add cleanup teardown for TEST_ prefixed doctors/campaigns to avoid noise in /doctors list across test runs."
+  ],
+  "critical_code_review_comments": [
+    "send_campaign correctly bypasses Meta in demo mode (status='sent' written locally) when settings.enabled=false — verified.",
+    "Hospital profile import is heavy (6 page fetches + Claude extraction, ~30s) and synchronous — fine for an admin one-shot action but consider a background task if multi-hospital support is added.",
+    "_resolve_audience treats inactive_days filter as $or with last_contact_at < threshold OR null — works but if other audience filters are also set, the $or could shadow them. Inspect when combining inactive_days with statuses/tags.",
+    "server.py has grown past 1260 lines — Phase 2 added ~370 lines. Split into routers/doctors.py, routers/campaigns.py, routers/hospital.py for maintainability.",
+    "Doctor list response shape diverges from Doctor model (adds patients_referred, total_revenue, needs_reconnect) — endpoint typed as untyped `list` which is correct, but consider a DoctorListItem response_model for OpenAPI clarity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2.py (created — 25 tests covering doctors, referrals, campaigns, hospital profile, import, AI context)"
+  ],
+  "success_rate": {
+    "backend": "96% (24/25 — only send_campaign with null department fails)",
+    "frontend": "100% (all 5 new routes render correctly with data, dialogs open, integration with backend verified via populated lists)"
+  },
+  "test_credentials": "admin@cureflow.in / admin123, reception@cureflow.in / reception123 — all working.",
+  "seed_data_creation": "Tests created TEST_ prefixed doctors, patients, referrals, campaigns. No teardown — these accumulate across runs (low priority cleanup).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 2 backend tests live at /app/backend/tests/test_phase2.py (25 tests, all idempotent except TEST_ data accumulation). After main agent fixes the str.replace(None) bug in send_campaign (server.py:1082), re-run only test_send_campaign_demo_mode to confirm. Hospital profile auto-import works against the real cureandcarehospital.in site — takes ~30s due to 6 page fetches + Claude extraction.",
+  "rca of the issue": "Bug: POST /api/campaigns/{id}/send → 500. Reproduction: create a campaign with empty audience filter (matches all patients), then POST /campaigns/{id}/send. Some patients in seed have department=None (e.g., the 2 TEST_PRefDoc/TEST_RefPatient created by Phase 2 tests). Trace: TypeError: replace() argument 2 must be str, not None at server.py:1082 → `c['message_body'].replace('{department}', p.get('department', ''))`. `p.get('department', '')` returns None when the key exists with a None value (dict.get's default only applies if key is missing). Mitigation: replace `p.get('department', '')` with `(p.get('department') or '')` and `p.get('name', '')` with `(p.get('name') or '')`. One-line change."
+}
