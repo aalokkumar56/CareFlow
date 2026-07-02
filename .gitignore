@@ -1,107 +1,207 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# =============================================================================
+# Cure-Flow — Repository-wide .gitignore
+# Single source of truth
+# https://git-scm.com/docs/gitignore
+# =============================================================================
 
-# IDE and editors
+# =============================================================================
+# IDEs & Editors
+# =============================================================================
+
 .idea/
 .vscode/
+.vs/
+
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+*.ncrunch*
+
+# =============================================================================
+# Operating System
+# =============================================================================
+
+.DS_Store
+Thumbs.db
+
+# =============================================================================
+# Environment & Secrets
+# =============================================================================
+
+.env
+.env.*
+!.env.example
+
+*.env
+*.key
+*.pem
+
+.credentials
+credentials.json
+*credentials.json*
+*token.json*
+
+**/secrets.json
+
+# =============================================================================
+# .NET
+# =============================================================================
+
+# Build output
+[Bb]in/
+[Oo]bj/
+artifacts/
+
+# NuGet
+project.lock.json
+project.fragment.lock.json
+
+# Publish
+**/publish/
+**/PublishProfiles/
+
+# Local configuration
+**/appsettings.Development.json
+**/appsettings.Production.json
+**/appsettings.Local.json
+**/appsettings.Development.local.json
+**/appsettings.*.local.json
+
+# Test & Coverage
+[Tt]est[Rr]esults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+
+# =============================================================================
+# Node / Frontend
+# =============================================================================
 
 # Dependencies
 node_modules/
-/node_modules
-/.pnp
+.pnp
 .pnp.js
-.yarn/install-state.gz
+
+# Yarn
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+.yarn/install-state.gz
 
-# Testing
-/coverage
+# Build output
+build/
+dist/
+.next/
+out/
 
-# Next.js
-/.next/
-/out/
 next-env.d.ts
 *.tsbuildinfo
 
-# Production builds
-/build
-dist/
-dist
+# Coverage
+coverage/
 
-# Environment files (comprehensive coverage)
+# =============================================================================
+# Playwright / Testing
+# =============================================================================
 
-*token.json*
-*credentials.json*
+test_reports/
 
-# Logs and debug files
-Logs/
+**/test-results/
+**/playwright-report/
+**/blob-report/
+
+screenshots/
+dotnet-frontend/e2e/screenshots/
+
+test_result.md
+test_reports/**/*.md
+
+# =============================================================================
+# Logs
+# =============================================================================
+
+[Ll]ogs/
+
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
 dump.rdb
 
-# System files
-.DS_Store
-*.pem
-
+# =============================================================================
 # Python
+# =============================================================================
+
 __pycache__/
-*pyc*
+*.py[cod]
+
 venv/
 .venv/
 
-# Development tools
-chainlit.md
-.chainlit
 .ipynb_checkpoints/
-.ac
 
+# =============================================================================
+# Build Cache
+# =============================================================================
+
+.cache/
+
+# =============================================================================
 # Deployment
+# =============================================================================
+
 .vercel
 
-# Data and databases
+# =============================================================================
+# Development Tooling
+# =============================================================================
+
+.chainlit
+chainlit.md
+
+.ac
+.emergent/
+
+# =============================================================================
+# Project-specific
+# =============================================================================
+
 agenthub/agents/youtube/db
 
-# Archive files and large assets
-**/*.zip
-**/*.tar.gz
-**/*.tar
-**/*.tgz
+memory/test_credentials.md
+
+scripts/wave1-split.ps1
+
+/assets/
+/tests/
+
+# =============================================================================
+# Archives / Binary Artifacts
+# =============================================================================
+
+*.zip
+*.tar
+*.tar.gz
+*.tgz
 *.pack
 *.deb
 *.dylib
 
-# Build caches
-.cache/
+# =============================================================================
+# Mobile Development Cache
+# =============================================================================
 
-memory/test_credentials.md
+android-sdk/frontend/node_modules/.cache/
 
-# Mobile development
-android-sdk/frontend/node_modules/.cache/default-development/3.pack
-frontend/node_modules/.cache/default-development/3.pack
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
-frontend/node_modules/.cache/default-development/5.pack
-frontend/node_modules/.cache/default-development/7.pack
-frontend/node_modules/.cache/default-development/8.pack
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
-frontend/node_modules/.cache/default-development/4.pack
+frontend/node_modules/.cache/

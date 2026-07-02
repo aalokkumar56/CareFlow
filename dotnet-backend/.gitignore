@@ -1,18 +1,1 @@
-bin/
-obj/
-*.user
-*.suo
-.vs/
-.idea/
-.vscode/
-*.swp
-*.swo
-appsettings.Development.json
-appsettings.Production.json
-appsettings.Local.json
-.env
-.env.*
-!.env.example
-*.log
-Logs/
-publish/
+# Ignore rules are defined in the repository root .gitignore.
