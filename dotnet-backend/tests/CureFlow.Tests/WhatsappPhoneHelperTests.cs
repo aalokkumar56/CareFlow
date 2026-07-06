@@ -11,6 +11,8 @@ public class WhatsappPhoneHelperTests
     [InlineData("9876543210", "919876543210")]
     [InlineData("00919876543210", "919876543210")]
     [InlineData("919876543210", "919876543210")]
+    [InlineData("7600174070", "917600174070")]
+    [InlineData("+91 76001 74070", "917600174070")]
     public void Normalize_formats_indian_numbers(string input, string expected)
     {
         WhatsappPhoneHelper.Normalize(input).Should().Be(expected);

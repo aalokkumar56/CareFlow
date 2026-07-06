@@ -3,6 +3,8 @@ namespace CureFlow.Application.Interfaces;
 public interface IWhatsAppSettingsService
 {
     Task<WhatsAppRuntimeSettings> GetAsync(CancellationToken ct = default);
+    /// <summary>Loads settings for anonymous webhook endpoints (no JWT tenant context).</summary>
+    Task<WhatsAppRuntimeSettings> GetForWebhookAsync(CancellationToken ct = default);
     Task<IntegrationStatusDto> GetStatusAsync(CancellationToken ct = default);
 }
 

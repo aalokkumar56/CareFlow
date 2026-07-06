@@ -18,6 +18,51 @@ public class WhatsAppSettingsService : IWhatsAppSettingsService
         var s = await _db.QueryFirstOrDefaultAsync<WhatsAppSettings>(
             $"""SELECT * FROM "WhatsAppSettings" WHERE {where} LIMIT 1""",
             ct: ct);
+        return MapSettings(s);
+    }
+
+    public async Task<WhatsAppRuntimeSettings> GetForWebhookAsync(CancellationToken ct = default)
+    {
+        var tenantId = await ResolveFirstActiveTenantIdAsync(ct);
+        if (tenantId == Guid.Empty)
+            return MapSettings(null);
+
+        var s = await _db.QueryFirstOrDefaultAsync<WhatsAppSettings>(
+            """
+            SELECT * FROM "WhatsAppSettings"
+            WHERE "IsDeleted" = false AND "TenantId" = @TenantId
+            LIMIT 1
+            """,
+            new { TenantId = tenantId },
+            ignoreTenant: true,
+            ct: ct);
+        return MapSettings(s);
+    }
+
+    public async Task<IntegrationStatusDto> GetStatusAsync(CancellationToken ct = default)
+    {
+        var settings = await GetAsync(ct);
+        if (!settings.IsConfigured)
+        {
+            return new IntegrationStatusDto(
+                settings.Enabled,
+                false,
+                "WhatsApp is not configured. Add credentials under Settings → Integrations.");
+        }
+
+        if (!settings.Enabled)
+        {
+            return new IntegrationStatusDto(
+                false,
+                true,
+                "WhatsApp is disabled. Enable it under Settings → Integrations to send messages.");
+        }
+
+        return new IntegrationStatusDto(true, true, "WhatsApp is active.");
+    }
+
+    private static WhatsAppRuntimeSettings MapSettings(WhatsAppSettings? s)
+    {
         if (s == null)
         {
             return new WhatsAppRuntimeSettings(
@@ -43,26 +88,18 @@ public class WhatsAppSettingsService : IWhatsAppSettingsService
             s.BusinessName ?? "Hospital");
     }
 
-    public async Task<IntegrationStatusDto> GetStatusAsync(CancellationToken ct = default)
+    private async Task<Guid> ResolveFirstActiveTenantIdAsync(CancellationToken ct)
     {
-        var settings = await GetAsync(ct);
-        if (!settings.IsConfigured)
-        {
-            return new IntegrationStatusDto(
-                settings.Enabled,
-                false,
-                "WhatsApp is not configured. Add credentials under Settings → Integrations.");
-        }
-
-        if (!settings.Enabled)
-        {
-            return new IntegrationStatusDto(
-                false,
-                true,
-                "WhatsApp is disabled. Enable it under Settings → Integrations to send messages.");
-        }
-
-        return new IntegrationStatusDto(true, true, "WhatsApp is active.");
+        var tenantId = await _db.QueryFirstOrDefaultAsync<Guid?>(
+            """
+            SELECT "Id" FROM "Tenants"
+            WHERE "IsActive" = true AND "IsDeleted" = false
+            ORDER BY "CreatedAt" ASC
+            LIMIT 1
+            """,
+            ignoreTenant: true,
+            ct: ct);
+        return tenantId ?? Guid.Empty;
     }
 
     private static bool IsConfigured(string provider, WhatsAppSettings s)

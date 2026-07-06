@@ -59,6 +59,13 @@ await using (var scope = app.Services.CreateAsyncScope())
     {
         await DemoSeeder.SeedAsync(session, hasher);
         await RbacSeeder.SeedAsync(session);
+
+        if (builder.Configuration.GetValue<bool>("WhatsApp:UseTestPhone"))
+        {
+            var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("TestPhoneSeeder");
+            await TestPhoneSeeder.SeedAsync(session, logger);
+        }
     }
 }
 

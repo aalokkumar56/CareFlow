@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/navigation";
 import { Users, CurrencyInr } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 

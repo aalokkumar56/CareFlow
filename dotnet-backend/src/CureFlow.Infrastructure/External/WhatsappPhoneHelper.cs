@@ -2,6 +2,12 @@ namespace CureFlow.Infrastructure.External;
 
 public static class WhatsappPhoneHelper
 {
+    /// <summary>Local 10-digit test handset for WhatsApp inbox (India).</summary>
+    public const string TestPhoneLocal = "7600174070";
+
+    /// <summary>Canonical normalized test number (91 + local).</summary>
+    public const string TestPhoneNormalized = "917600174070";
+
     /// <summary>
     /// Canonical storage/API format: digits only with India country code (e.g. 919876543210).
     /// Strips +, spaces, leading 00, and redundant leading zeros.

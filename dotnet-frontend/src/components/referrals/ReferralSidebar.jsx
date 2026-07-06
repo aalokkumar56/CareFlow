@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/navigation";
 import { Trophy, TrendUp, CurrencyInr } from "@phosphor-icons/react";
 import SidePanel from "@/components/layout/SidePanel";
 import { cn } from "@/lib/utils";

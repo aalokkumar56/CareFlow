@@ -2,8 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using CureFlow.Application.Common;
-using CureFlow.Application.Notifications;
 using CureFlow.Application.Interfaces;
+using CureFlow.Application.Notifications;
 using CureFlow.Domain.Entities;
 using CureFlow.Domain.Enums;
 using CureFlow.Infrastructure.Persistence.Dapper;
@@ -17,7 +17,11 @@ namespace CureFlow.Infrastructure.External;
 /// </summary>
 public static class WhatsappWebhookProcessor
 {
-    public static async Task ProcessAsync(string body, CancellationToken ct, IServiceProvider? services = null)
+    public static async Task ProcessAsync(
+        string body,
+        string? signatureHeader,
+        CancellationToken ct,
+        IServiceProvider? services = null)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
@@ -42,28 +46,128 @@ public static class WhatsappWebhookProcessor
         tenantContext.IsAuthenticated = true;
         tenantContext.UserEmail = "whatsapp@webhook";
 
+        var settings = await scope.ServiceProvider.GetRequiredService<IWhatsAppSettingsService>().GetAsync(ct);
+        if (!TryVerifyWebhookSignature(body, signatureHeader, settings.AppSecret, logger))
+            return;
+
         var publisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();
         var ctx = new InboundContext(db, mediaStore, tenantId, publisher);
 
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
-        var processed = await TryProcessMetaPayloadAsync(ctx, root, ct);
+        var processed = await TryProcessWhatsBizEventAsync(ctx, root, ct);
+        if (!processed)
+            processed = await TryProcessMetaPayloadAsync(ctx, root, ct);
         if (!processed)
             processed = await TryProcessMessagesArrayAsync(ctx, root, ct);
         if (!processed && root.TryGetProperty("data", out var data))
             processed = await TryProcessMessagesArrayAsync(ctx, data, ct);
         if (!processed)
             processed = await TryProcessFlatPayloadAsync(ctx, root, ct);
-        if (!processed && root.TryGetProperty("event", out var eventEl))
-            processed = await TryProcessFlatPayloadAsync(ctx, eventEl, ct);
         if (!processed && root.TryGetProperty("payload", out var payloadEl))
             processed = await TryProcessFlatPayloadAsync(ctx, payloadEl, ct);
 
         if (!processed)
             logger.LogWarning("Webhook payload did not match a known format: {Preview}", Truncate(body));
+        else
+            logger.LogInformation("Webhook inbound event processed.");
+    }
 
-        logger.LogInformation("Webhook processed successfully.");
+    /// <summary>
+    /// Returns true when signature is valid, or when verification is skipped (no secret / no header).
+    /// </summary>
+    public static bool TryVerifyWebhookSignature(
+        string body,
+        string? signatureHeader,
+        string? appSecret,
+        ILogger? logger = null)
+    {
+        if (string.IsNullOrEmpty(appSecret))
+            return true;
+
+        if (string.IsNullOrEmpty(signatureHeader))
+        {
+            logger?.LogWarning(
+                "WhatsApp AppSecret is configured but X-Hub-Signature-256 header is missing — processing webhook anyway. " +
+                "Set the same App Secret in WhatsBiz Webhook Relay for strict verification.");
+            return true;
+        }
+
+        if (!VerifyMetaSignature(body, signatureHeader, appSecret))
+        {
+            logger?.LogWarning("Invalid WhatsApp webhook signature — rejecting payload.");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// WhatsBiz Webhook Relay format: { "event": "message_received", "from": "+91...", "text": { "body": "..." }, ... }
+    /// Docs: https://whatsbizapi.com/docs/webhooks
+    /// </summary>
+    private static async Task<bool> TryProcessWhatsBizEventAsync(InboundContext ctx, JsonElement root, CancellationToken ct)
+    {
+        var eventName = ReadString(root, "event");
+        if (string.IsNullOrWhiteSpace(eventName))
+            return false;
+
+        if (string.Equals(eventName, "message_received", StringComparison.OrdinalIgnoreCase))
+        {
+            var phone = ReadPhone(root);
+            if (string.IsNullOrWhiteSpace(phone) && root.TryGetProperty("contact", out var contact))
+                phone = ReadString(contact, "wa_id", "phone", "from");
+
+            var text = ReadTextBody(root);
+            var media = ReadMediaReference(root);
+            var waMessageId = ReadMessageId(root);
+
+            if (string.IsNullOrWhiteSpace(phone))
+                return false;
+
+            if (string.IsNullOrWhiteSpace(text) && media == null)
+            {
+                var typeLabel = ReadString(root, "type") ?? "message";
+                text = $"[{typeLabel}]";
+            }
+
+            await SaveInboundMessageAsync(ctx, phone, text ?? string.Empty, media, waMessageId, ct);
+            return true;
+        }
+
+        if (string.Equals(eventName, "message_status", StringComparison.OrdinalIgnoreCase))
+        {
+            await ProcessSingleStatusAsync(ctx.Db, root, ct);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static async Task ProcessSingleStatusAsync(ICureFlowDbSession db, JsonElement statusItem, CancellationToken ct)
+    {
+        var waMessageId = ReadMessageId(statusItem);
+        if (string.IsNullOrWhiteSpace(waMessageId)) return;
+        if (!statusItem.TryGetProperty("status", out var statusEl)) return;
+
+        var msgWhere = SqlFragments.WhereActive<Message>(ignoreTenant: false);
+        var message = await db.QueryFirstOrDefaultAsync<Message>(
+            $"""SELECT * FROM "Messages" WHERE "WaMessageId" = @waMessageId AND {msgWhere} LIMIT 1""",
+            new { waMessageId },
+            ct: ct);
+        if (message == null) return;
+
+        var status = (statusEl.GetString() ?? "").ToLowerInvariant();
+        message.Status = status switch
+        {
+            "sent" => MessageStatus.Sent,
+            "delivered" => MessageStatus.Delivered,
+            "read" => MessageStatus.Read,
+            "failed" => MessageStatus.Failed,
+            _ => message.Status
+        };
+        await db.UpdateAsync(message, ct: ct);
     }
 
     public static bool VerifyMetaSignature(string body, string? signatureHeader, string appSecret)
@@ -437,6 +541,16 @@ public static class WhatsappWebhookProcessor
                 return bodyEl.GetString() ?? string.Empty;
             if (textEl.ValueKind == JsonValueKind.String)
                 return textEl.GetString() ?? string.Empty;
+        }
+
+        if (element.TryGetProperty("interactive", out var interactive))
+        {
+            if (interactive.TryGetProperty("button_reply", out var buttonReply)
+                && buttonReply.TryGetProperty("title", out var buttonTitle))
+                return buttonTitle.GetString() ?? string.Empty;
+            if (interactive.TryGetProperty("list_reply", out var listReply)
+                && listReply.TryGetProperty("title", out var listTitle))
+                return listTitle.GetString() ?? string.Empty;
         }
 
         return ReadString(element, "message", "body", "content", "last_message_of_user", "lastMessageOfUser") ?? string.Empty;

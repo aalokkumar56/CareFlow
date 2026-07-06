@@ -7,13 +7,15 @@ import {
   shouldSkipGlobalLoader,
 } from "@/lib/globalLoader";
 
-const envBackendUrl = process.env.REACT_APP_BACKEND_URL?.trim();
+const envBackendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.trim();
 const normalizedEnvBackendUrl = envBackendUrl
   ? envBackendUrl.replace(/\/+$/, "")
   : null;
 
-export const BACKEND_URL = normalizedEnvBackendUrl || "http://localhost:5180";
-export const API_BASE = `${BACKEND_URL}/api`;
+export const BACKEND_URL =
+  normalizedEnvBackendUrl ||
+  (typeof window !== "undefined" ? window.location.origin : "http://localhost:5180");
+export const API_BASE = normalizedEnvBackendUrl ? `${normalizedEnvBackendUrl}/api` : "/api";
 
 export const api = axios.create({
   baseURL: API_BASE,

@@ -211,8 +211,20 @@ const IntegrationsPanel = ({ fillHeight = false }) => {
             </DialogTitle>
           </DialogHeader>
           <p className="text-ui-caption text-text-secondary -mt-2">
-            Webhook: <code className="font-mono bg-white/60 px-1 rounded text-[10px]">{BACKEND_URL}/api/whatsapp/webhook</code>
+            Webhook URL (must be public HTTPS — use ngrok for local dev):
+            <code className="block font-mono bg-white/60 px-2 py-1 rounded text-[10px] mt-1 break-all">{BACKEND_URL}/api/whatsapp/webhook</code>
           </p>
+          {waProvider === "WhatsBiz" && (
+            <div className="rounded-xl border border-amber-200/70 bg-amber-50/50 px-3 py-2 text-[11px] text-amber-900 space-y-1.5">
+              <p className="font-semibold">WhatsBiz Webhook Relay setup</p>
+              <ol className="list-decimal list-inside space-y-0.5 text-amber-800">
+                <li>In WhatsBiz dashboard → Webhook Relay, paste the URL above (HTTPS only).</li>
+                <li>Set the same Verify Token here and in WhatsBiz if prompted.</li>
+                <li>Enable WhatsApp and save — inbound messages arrive via webhook only.</li>
+                <li>Localhost cannot receive webhooks; run <code className="font-mono bg-white/60 px-0.5 rounded">ngrok http 5180</code> and use the ngrok URL.</li>
+              </ol>
+            </div>
+          )}
           <FormField label="Provider">
             <Select value={waProvider} onValueChange={(v) => setWaSettings({ ...waSettings, provider: v })}>
               <SelectTrigger className="rounded-lg h-8"><SelectValue /></SelectTrigger>

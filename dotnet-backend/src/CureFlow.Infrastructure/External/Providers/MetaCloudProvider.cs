@@ -238,22 +238,13 @@ public class MetaCloudProvider : IWhatsappProvider
     public bool VerifyWebhookSubscription(string mode, string token, out string? challenge, string? challengeParam = null)
     {
         challenge = challengeParam;
-        var settings = _settingsService.GetAsync().GetAwaiter().GetResult();
+        var settings = _settingsService.GetForWebhookAsync().GetAwaiter().GetResult();
         var expected = settings.VerifyToken;
         return mode == "subscribe" && !string.IsNullOrEmpty(expected) && token == expected;
     }
 
-    public async Task ProcessIncomingWebhookAsync(string body, string? signatureHeader, CancellationToken ct = default)
-    {
-        var settings = await ResolveSettingsAsync(ct);
-        if (!string.IsNullOrEmpty(settings.AppSecret) && !WhatsappWebhookProcessor.VerifyMetaSignature(body, signatureHeader, settings.AppSecret))
-        {
-            _logger.LogWarning("Invalid Meta webhook signature");
-            return;
-        }
-
-        await WhatsappWebhookProcessor.ProcessAsync(body, ct, _services);
-    }
+    public Task ProcessIncomingWebhookAsync(string body, string? signatureHeader, CancellationToken ct = default)
+        => WhatsappWebhookProcessor.ProcessAsync(body, signatureHeader, ct, _services);
 
     private async Task<(string? PhoneNumberId, string? AccessToken, string? AppSecret, bool Enabled)> ResolveSettingsAsync(CancellationToken ct)
     {

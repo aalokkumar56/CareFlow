@@ -1,11 +1,11 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@/lib/navigation";
 import { Bell, Check, Gear } from "@phosphor-icons/react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import useNotifications from "@/hooks/useNotifications";
 import { cn } from "@/lib/utils";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/navigation";
 
 const formatTime = (iso) => {
   if (!iso) return "";

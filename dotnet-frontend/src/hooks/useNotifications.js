@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 const POLL_MS = 30_000;
 
 export const useNotifications = () => {
-  const { user, ready } = useAuth();
+  const { user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -39,8 +39,8 @@ export const useNotifications = () => {
   }, [user]);
 
   useEffect(() => {
-    if (!ready || !user) {
-      if (ready && !user) setUnreadCount(0);
+    if (!user) {
+      setUnreadCount(0);
       return;
     }
 
@@ -51,7 +51,7 @@ export const useNotifications = () => {
       controller.abort();
       clearInterval(interval);
     };
-  }, [ready, user, refreshCount]);
+  }, [user, refreshCount]);
 
   const markRead = useCallback(async (id) => {
     await apiPatch(`/notifications/${id}/read`);

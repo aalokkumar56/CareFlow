@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink } from "@/lib/navigation";
 import { Users, Shield, Key, ChatText, Plugs, Buildings, Bell } from "@phosphor-icons/react";
 import SidePanel from "@/components/layout/SidePanel";
 import usePermissions from "@/hooks/usePermissions";

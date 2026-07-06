@@ -1,6 +1,7 @@
 using CureFlow.Application.DTOs;
 using CureFlow.Application.Interfaces;
 using CureFlow.Infrastructure.External.Providers;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CureFlow.Infrastructure.External;
 
@@ -10,17 +11,19 @@ public class RoutingWhatsappProvider : IWhatsappProvider
     private readonly IWhatsAppSettingsService _settings;
     private readonly WhatsBizProvider _whatsBiz;
     private readonly MetaCloudProvider _meta;
+    private readonly IServiceProvider _services;
 
     public RoutingWhatsappProvider(
         IWhatsAppSettingsService settings,
         WhatsBizProvider whatsBiz,
-        MetaCloudProvider meta)
+        MetaCloudProvider meta,
+        IServiceProvider services)
     {
         _settings = settings;
         _whatsBiz = whatsBiz;
         _meta = meta;
+        _services = services;
     }
-
     public string ProviderName => "Routing";
 
     private async Task<IWhatsappProvider> ResolveAsync(CancellationToken ct)
@@ -68,12 +71,15 @@ public class RoutingWhatsappProvider : IWhatsappProvider
     public async Task<GetContactsResponse> GetContactsAsync(bool forceRefresh = false, CancellationToken ct = default)
         => await (await ResolveAsync(ct)).GetContactsAsync(forceRefresh, ct);
 
-    public async Task ProcessIncomingWebhookAsync(string body, string? signatureHeader, CancellationToken ct = default)
-        => await (await ResolveAsync(ct)).ProcessIncomingWebhookAsync(body, signatureHeader, ct);
+    public Task ProcessIncomingWebhookAsync(string body, string? signatureHeader, CancellationToken ct = default)
+        => WhatsappWebhookProcessor.ProcessAsync(body, signatureHeader, ct, _services);
 
     public bool VerifyWebhookSubscription(string mode, string token, out string? challenge, string? challengeParam = null)
     {
-        // Webhook verification uses verify token from DB; either provider reads DB.
-        return _meta.VerifyWebhookSubscription(mode, token, out challenge, challengeParam);
+        var s = _settings.GetForWebhookAsync().GetAwaiter().GetResult();
+        var provider = string.Equals(s.Provider, "WhatsBiz", StringComparison.OrdinalIgnoreCase)
+            ? (IWhatsappProvider)_whatsBiz
+            : _meta;
+        return provider.VerifyWebhookSubscription(mode, token, out challenge, challengeParam);
     }
 }
