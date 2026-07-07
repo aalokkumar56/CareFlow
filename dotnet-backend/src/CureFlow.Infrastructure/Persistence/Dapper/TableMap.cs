@@ -12,6 +12,9 @@ public static class TableMap
     private static readonly Dictionary<Type, string> Map = new()
     {
         [typeof(Tenant)] = "Tenants",
+        [typeof(PlatformUser)] = "PlatformUsers",
+        [typeof(TenantOnboardingState)] = "TenantOnboardingStates",
+        [typeof(PlatformAuditLog)] = "PlatformAuditLogs",
         [typeof(User)] = "Users",
         [typeof(Patient)] = "Patients",
         [typeof(Conversation)] = "Conversations",

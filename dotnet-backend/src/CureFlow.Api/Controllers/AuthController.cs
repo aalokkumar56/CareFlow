@@ -33,6 +33,11 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<UserDto>> Me(CancellationToken ct) =>
         Ok(await _auth.GetMeAsync(ct));
 
+    /// <summary>Current user + tenant lifecycle (for route gates).</summary>
+    [HttpGet("session")]
+    public async Task<ActionResult<SessionDto>> Session(CancellationToken ct) =>
+        Ok(await _auth.GetSessionAsync(ct));
+
     /// <summary>Create a new user inside the current tenant (admin only).</summary>
     [HttpPost("register")]
     [Authorize(Policy = "Permission:User.Create")]

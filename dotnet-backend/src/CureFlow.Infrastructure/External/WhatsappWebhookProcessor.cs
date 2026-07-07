@@ -35,10 +35,14 @@ public static class WhatsappWebhookProcessor
         var mediaStore = scope.ServiceProvider.GetRequiredService<IWhatsappMediaStore>();
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("WhatsappWebhookProcessor");
 
-        var tenantId = await ResolveWebhookTenantIdAsync(db, ct);
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+
+        var phoneNumberId = ExtractPhoneNumberId(root);
+        var tenantId = await ResolveWebhookTenantIdAsync(db, phoneNumberId, logger, ct);
         if (tenantId == Guid.Empty)
         {
-            logger.LogWarning("Webhook received but no active tenant found; skipping.");
+            logger.LogWarning("Webhook received but no active tenant found for phone_number_id={PhoneNumberId}; skipping.", phoneNumberId);
             return;
         }
 
@@ -52,9 +56,6 @@ public static class WhatsappWebhookProcessor
 
         var publisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();
         var ctx = new InboundContext(db, mediaStore, tenantId, publisher);
-
-        using var doc = JsonDocument.Parse(body);
-        var root = doc.RootElement;
 
         var processed = await TryProcessWhatsBizEventAsync(ctx, root, ct);
         if (!processed)
@@ -181,8 +182,64 @@ public static class WhatsappWebhookProcessor
             Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(sigHex.ToLowerInvariant()));
     }
 
-    private static async Task<Guid> ResolveWebhookTenantIdAsync(ICureFlowDbSession db, CancellationToken ct)
+    /// <summary>Extracts Meta/WhatsBiz phone_number_id from webhook JSON for tenant routing.</summary>
+    public static string? ExtractPhoneNumberId(JsonElement root)
     {
+        var direct = ReadString(root, "phone_number_id", "phoneNumberId");
+        if (!string.IsNullOrWhiteSpace(direct))
+            return direct;
+
+        if (root.TryGetProperty("entry", out var entries) && entries.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in entries.EnumerateArray())
+            {
+                if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array)
+                    continue;
+                foreach (var change in changes.EnumerateArray())
+                {
+                    if (!change.TryGetProperty("value", out var value))
+                        continue;
+                    if (value.TryGetProperty("metadata", out var metadata))
+                    {
+                        var metaId = ReadString(metadata, "phone_number_id", "phoneNumberId");
+                        if (!string.IsNullOrWhiteSpace(metaId))
+                            return metaId;
+                    }
+                }
+            }
+        }
+
+        if (root.TryGetProperty("metadata", out var rootMeta))
+        {
+            var metaId = ReadString(rootMeta, "phone_number_id", "phoneNumberId");
+            if (!string.IsNullOrWhiteSpace(metaId))
+                return metaId;
+        }
+
+        return null;
+    }
+
+    private static async Task<Guid> ResolveWebhookTenantIdAsync(
+        ICureFlowDbSession db,
+        string? phoneNumberId,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(phoneNumberId))
+        {
+            var byPhone = await db.QueryFirstOrDefaultAsync<Guid?>(
+                """
+                SELECT "TenantId" FROM "WhatsAppSettings"
+                WHERE "PhoneNumberId" = @phoneNumberId AND "IsDeleted" = false
+                LIMIT 1
+                """,
+                new { phoneNumberId },
+                ignoreTenant: true,
+                ct: ct);
+            if (byPhone.HasValue && byPhone.Value != Guid.Empty)
+                return byPhone.Value;
+        }
+
         var tenantId = await db.QueryFirstOrDefaultAsync<Guid?>(
             """
             SELECT "Id" FROM "Tenants"
@@ -192,6 +249,13 @@ public static class WhatsappWebhookProcessor
             """,
             ignoreTenant: true,
             ct: ct);
+
+        if (tenantId.HasValue && !string.IsNullOrWhiteSpace(phoneNumberId))
+            logger.LogWarning(
+                "No WhatsAppSettings match phone_number_id={PhoneNumberId}; falling back to first active tenant {TenantId}",
+                phoneNumberId,
+                tenantId);
+
         return tenantId ?? Guid.Empty;
     }
 

@@ -20,7 +20,9 @@ public class SmokeTests
     public void AuthResponse_RecordEquality()
     {
         var u = new UserDto(Guid.Empty, "n", "e", UserRole.Admin, true, null, null);
-        var t = new TenantDto(Guid.Empty, "s", "n", SubscriptionPlan.Trial, SubscriptionStatus.Trialing);
+        var t = new TenantDto(
+            Guid.Empty, "s", "n", SubscriptionPlan.Trial, SubscriptionStatus.Trialing,
+            TenantLifecycleStatus.Active, null, DateTime.UtcNow, true, DateTime.UtcNow);
         var a = new AuthResponse("tok", u, t);
         a.AccessToken.Should().Be("tok");
     }

@@ -27,9 +27,9 @@ function NavLinkBody({ isActive, children }) {
   );
 }
 
-export function Link({ to, href, children, ...props }) {
+export function Link({ to, href, children, prefetch = false, ...props }) {
   return (
-    <NextLink href={to ?? href} prefetch {...props}>
+    <NextLink href={to ?? href} prefetch={prefetch} {...props}>
       {children}
     </NextLink>
   );
@@ -44,7 +44,7 @@ export function NavLink({ to, end = false, className, children, onClick, ...prop
   return (
     <NextLink
       href={to}
-      prefetch
+      prefetch={false}
       className={resolvedClass}
       onClick={onClick}
       {...props}
@@ -78,6 +78,7 @@ export function useNavigate() {
   );
 }
 
+export { usePathname };
 export function useParams() {
   return useNextParams();
 }

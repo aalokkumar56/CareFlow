@@ -1,8 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "@/lib/navigation";
 import { useAuth } from "@/lib/auth";
 import { normalizeApiError } from "@/lib/api";
-import { Sparkle, EnvelopeSimple, Lock } from "@phosphor-icons/react";
+import { resolveTenantBranding } from "@/lib/tenantBranding";
+import CureFlowMark from "@/components/brand/CureFlowMark";
+import { EnvelopeSimple, Lock } from "@phosphor-icons/react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -11,20 +13,31 @@ import { Toaster } from "@/components/ui/sonner";
 const LOGIN_BG = "https://static.prod-images.emergentagent.com/jobs/6650abee-e9ca-4809-bc95-2083338f98c5/images/cbc93e151dd02be7334cfb1572ee6047c7c9fd89f8c76cb7af56e3c53dcb38e1.png";
 
 const Login = () => {
-  const { login } = useAuth();
+  const { login, postLoginRoute } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [bgFailed, setBgFailed] = useState(false);
+  const [brandedHospital, setBrandedHospital] = useState(null);
+
+  useEffect(() => {
+    resolveTenantBranding().then((ctx) => {
+      if (ctx?.name) setBrandedHospital(ctx.name);
+    });
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await login(email, password);
-      toast.success("Welcome back!");
-      navigate("/");
+      const { tenant } = await login(email, password);
+      if (postLoginRoute(tenant) === "/pending-approval") {
+        toast.success("Signed in — your hospital is awaiting CureFlow approval.");
+      } else {
+        toast.success("Welcome back!");
+      }
+      navigate(postLoginRoute(tenant));
     } catch (err) {
       toast.error(normalizeApiError(err, "Login failed"));
     } finally {
@@ -52,14 +65,15 @@ const Login = () => {
 
         <div className="glass-card bg-white/15 backdrop-blur-2xl border-white/25 shadow-2xl p-6 sm:p-8">
           <div className="flex flex-col items-center text-center mb-6">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkle weight="fill" className="w-6 h-6 text-emerald-300" />
-              <span className="font-heading text-2xl font-semibold text-white tracking-tight lowercase">
-                cure&amp;care
-              </span>
-            </div>
-            <h1 className="font-heading text-xl font-semibold text-white">Welcome back</h1>
-            <p className="text-white/70 text-[13px] mt-1">Sign in to continue to your account</p>
+            <CureFlowMark light className="mb-3" />
+            <h1 className="font-heading text-xl font-semibold text-white">
+              {brandedHospital ? `Sign in to ${brandedHospital}` : "Welcome back"}
+            </h1>
+            <p className="text-white/70 text-[13px] mt-1" data-testid="login-subtitle">
+              {brandedHospital
+                ? "Your hospital workspace on CureFlow"
+                : "Sign in to continue to your account"}
+            </p>
           </div>
 
           <form onSubmit={submit} className="space-y-4" data-testid="login-form">
@@ -106,6 +120,13 @@ const Login = () => {
 
           <p className="text-center text-[11px] text-emerald-200/80 mt-6">
             Secure · Reliable · Built for modern healthcare
+          </p>
+
+          <p className="text-center text-[12px] text-white/70 mt-4">
+            New hospital?{" "}
+            <a href="/signup" className="text-emerald-300 hover:underline" data-testid="login-signup-link">
+              Register your hospital
+            </a>
           </p>
         </div>
       </div>

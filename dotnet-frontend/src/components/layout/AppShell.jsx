@@ -10,6 +10,7 @@ import { formatRole } from "@/lib/permissions";
 import { useHospitalProfile } from "@/hooks/useHospitalProfile";
 import NotificationDropdown from "@/components/notifications/NotificationDropdown";
 import { useMounted } from "@/hooks/useMounted";
+import { useSidebarCollapsed } from "@/hooks/useSidebarCollapsed";
 import { cn } from "@/lib/utils";
 
 const AppShell = ({
@@ -31,9 +32,11 @@ const AppShell = ({
 }) => {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const { user, logout } = useAuth();
-  const { hospitalName } = useHospitalProfile();
+  const { user, tenant, logout } = useAuth();
+  const { hospitalName: profileName } = useHospitalProfile();
+  const hospitalName = tenant?.name || profileName;
   const mounted = useMounted();
+  const { collapsed: sidebarCollapsed, toggle: toggleSidebar } = useSidebarCollapsed();
 
   const todayLabel = mounted
     ? new Date().toLocaleDateString("en-IN", {
@@ -47,7 +50,7 @@ const AppShell = ({
 
   return (
     <div className="flex h-screen mesh-gradient-bg overflow-hidden md:gap-3">
-      <Sidebar />
+      <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
       <main className={cn(
         "flex-1 flex flex-col overflow-hidden min-w-0 min-h-0 pr-2 sm:pr-3 pt-2 sm:pt-3 pb-2 sm:pb-3 mb-20 lg:mb-0",
       )}>
@@ -171,7 +174,12 @@ const AppShell = ({
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         <SheetContent side="left" className="w-[280px] p-0 flex flex-col glass-panel border-white/60">
           <SheetHeader className="px-5 py-4 border-b border-white/50 text-left">
-            <SheetTitle className="font-heading text-[#022C22]">CureFlow</SheetTitle>
+            <SheetTitle
+              className="font-heading text-[#022C22] truncate"
+              data-testid="sidebar-hospital-name"
+            >
+              {hospitalName}
+            </SheetTitle>
           </SheetHeader>
           <SidebarNav
             onNavigate={() => setMobileNavOpen(false)}

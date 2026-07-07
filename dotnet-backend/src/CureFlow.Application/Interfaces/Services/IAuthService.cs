@@ -10,4 +10,5 @@ public interface IAuthService
     Task<TenantDto> RegisterTenantAsync(RegisterTenantRequest req, CancellationToken ct = default);
     Task<UserDto> CreateUserAsync(CreateUserRequest req, CancellationToken ct = default);
     Task<UserDto> GetMeAsync(CancellationToken ct = default);
+    Task<SessionDto> GetSessionAsync(CancellationToken ct = default);
 }

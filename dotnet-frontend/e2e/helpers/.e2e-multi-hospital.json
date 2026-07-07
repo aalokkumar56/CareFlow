@@ -1,0 +1,47 @@
+{
+  "althan": {
+    "key": "althan",
+    "slug": "care-cure-althan",
+    "name": "Care & Cure Althan",
+    "adminEmail": "admin@care-cure-althan.e2e.cureflow.test",
+    "password": "Test@12345",
+    "exclusivePatient": "Althan Exclusive Patient",
+    "patientPhone": "919100000001",
+    "departments": [
+      "General Medicine",
+      "Cardiology",
+      "Orthopedics"
+    ],
+    "patientId": "4fc4e00b-a9e2-410d-9282-2502baf15043"
+  },
+  "surat": {
+    "key": "surat",
+    "slug": "city-hospital-surat",
+    "name": "City Hospital Surat",
+    "adminEmail": "admin@city-hospital-surat.e2e.cureflow.test",
+    "password": "Test@12345",
+    "exclusivePatient": "Surat Exclusive Patient",
+    "patientPhone": "919100000002",
+    "departments": [
+      "Orthopedics",
+      "Dermatology",
+      "ENT"
+    ],
+    "patientId": "1a84fbfd-841e-468f-90b4-6c2ccb9e70b2"
+  },
+  "pune": {
+    "key": "pune",
+    "slug": "metro-clinic-pune",
+    "name": "Metro Clinic Pune",
+    "adminEmail": "admin@metro-clinic-pune.e2e.cureflow.test",
+    "password": "Test@12345",
+    "exclusivePatient": "Pune Exclusive Patient",
+    "patientPhone": "919100000003",
+    "departments": [
+      "Pediatrics",
+      "General Medicine",
+      "Gynecology"
+    ],
+    "patientId": "f6684661-6024-44a9-bad6-14f4e1133d90"
+  }
+}

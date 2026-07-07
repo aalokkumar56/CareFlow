@@ -140,17 +140,23 @@ const Appointments = () => {
   const [cancelTarget, setCancelTarget] = useState(null);
 
   const load = () => {
-    const qs = buildPageQuery({ page: 1, page_size: 500 });
+    const today = new Date();
+    const rangeFrom =
+      dateFilter === "today"
+        ? new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
+        : weekStart.toISOString();
+    const rangeTo =
+      dateFilter === "today"
+        ? addDays(new Date(today.getFullYear(), today.getMonth(), today.getDate()), 1).toISOString()
+        : addDays(weekStart, 7).toISOString();
+    const qs = buildPageQuery({
+      page: 1,
+      page_size: 100,
+      from: rangeFrom,
+      to: rangeTo,
+    });
     api.get(`/appointments?${qs}`).then((r) => {
-      let items = unwrapPaged(r).items;
-      if (dateFilter === "today") {
-        const today = new Date();
-        items = items.filter((a) => {
-          const d = new Date(a.scheduled_at);
-          return d.toDateString() === today.toDateString();
-        });
-      }
-      setRows(items);
+      setRows(unwrapPaged(r).items);
     });
   };
 

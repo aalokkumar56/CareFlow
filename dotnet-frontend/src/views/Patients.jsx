@@ -83,7 +83,7 @@ const Patients = () => {
   const fetchUpcomingAppointments = useCallback(() => {
     const from = new Date().toISOString();
     const to = new Date(Date.now() + 30 * 86400000).toISOString();
-    api.get(`/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page_size=500`)
+    api.get(`/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&page_size=100`)
       .then((r) => {
         const items = unwrapPaged(r).items || [];
         const map = {};

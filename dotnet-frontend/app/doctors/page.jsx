@@ -1,15 +1,5 @@
 "use client";
 
-import ClientPage from "@/components/ClientPage";
-import { loadView } from "@/components/loadView";
-import { PERMISSIONS } from "@/lib/permissions";
+import { createClientRoute } from "@/components/createClientRoute";
 
-const Doctors = loadView(() => import("@/views/Doctors"));
-
-export default function DoctorsPage() {
-  return (
-    <ClientPage permission={PERMISSIONS.ReferralView}>
-      <Doctors />
-    </ClientPage>
-  );
-}
+export default createClientRoute(() => import("./page.client"));

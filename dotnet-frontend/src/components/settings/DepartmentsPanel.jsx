@@ -68,7 +68,9 @@ const DepartmentsPanel = ({ fillHeight = false }) => {
       className={fillHeight ? "h-full flex flex-col overflow-hidden p-4 sm:p-5" : "p-4 sm:p-5"}
     >
       <div className="mb-4">
-        <h2 className="font-heading text-[15px] font-semibold text-[#022C22]">Departments</h2>
+        <h2 className="font-heading text-[15px] font-semibold text-[#022C22]" data-testid="departments-heading">
+          Departments
+        </h2>
         <p className="text-[12px] text-text-secondary mt-0.5">
           Used when booking appointments, assigning patients, and filtering lists.
         </p>

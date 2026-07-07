@@ -24,13 +24,10 @@ public class ExceptionMiddleware
             ctx.Response.StatusCode = de.StatusCode;
             await ctx.Response.WriteAsJsonAsync(new { error = de.Message, detail = de.Message });
         }
-        catch (OperationCanceledException) when (ctx.RequestAborted.IsCancellationRequested)
+        catch (OperationCanceledException) when (!ctx.Response.HasStarted)
         {
-            if (!ctx.Response.HasStarted)
-            {
-                ctx.Response.StatusCode = 499;
-                await ctx.Response.WriteAsJsonAsync(new { error = "Request cancelled", detail = "Request cancelled" });
-            }
+            ctx.Response.StatusCode = 499;
+            await ctx.Response.WriteAsJsonAsync(new { error = "Request cancelled", detail = "Request cancelled" });
         }
         catch (Exception ex)
         {

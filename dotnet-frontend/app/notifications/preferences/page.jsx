@@ -1,14 +1,5 @@
 "use client";
 
-import ClientPage from "@/components/ClientPage";
-import { loadView } from "@/components/loadView";
+import { createClientRoute } from "@/components/createClientRoute";
 
-const NotificationPreferencesPage = loadView(() => import("@/views/NotificationPreferencesPage"));
-
-export default function NotificationPreferencesRoutePage() {
-  return (
-    <ClientPage>
-      <NotificationPreferencesPage />
-    </ClientPage>
-  );
-}
+export default createClientRoute(() => import("./page.client"));

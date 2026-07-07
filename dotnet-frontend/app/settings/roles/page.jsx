@@ -1,15 +1,5 @@
 "use client";
 
-import ClientPage from "@/components/ClientPage";
-import { loadView } from "@/components/loadView";
-import { PERMISSIONS } from "@/lib/permissions";
+import { createClientRoute } from "@/components/createClientRoute";
 
-const RolesPage = loadView(() => import("@/views/settings/RolesPage"));
-
-export default function SettingsRolesPage() {
-  return (
-    <ClientPage permission={PERMISSIONS.UserView}>
-      <RolesPage />
-    </ClientPage>
-  );
-}
+export default createClientRoute(() => import("./page.client"));

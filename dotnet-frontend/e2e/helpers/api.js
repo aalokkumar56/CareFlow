@@ -28,6 +28,7 @@ async function apiLogin(email, password, retries = 4) {
       const result = {
         accessToken: data.accessToken || data.access_token,
         user: data.user,
+        tenant: data.tenant,
       };
       _tokenCache.set(cacheKey, result);
       return result;
@@ -195,6 +196,41 @@ async function patchPatient(token, patientId, patch) {
   return apiRequest(token, "PATCH", `/patients/${patientId}`, patch);
 }
 
+/** @param {string} token @param {string} patientId */
+async function getPatient(token, patientId) {
+  return apiRequest(token, "GET", `/patients/${patientId}`);
+}
+
+/** @param {{ hospitalName: string, adminName: string, adminEmail: string, adminPassword: string, phone?: string }} opts */
+async function registerTenant(opts) {
+  const res = await fetch(`${apiURL}/api/auth/register-tenant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      hospital_name: opts.hospitalName,
+      admin_name: opts.adminName,
+      admin_email: opts.adminEmail,
+      admin_password: opts.adminPassword,
+      phone: opts.phone,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`register-tenant failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+async function platformApproveTenant(tenantId) {
+  const res = await fetch(`${apiURL}/api/platform/tenants/${tenantId}/approve`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`approve failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
 module.exports = {
   apiURL,
   apiLogin,
@@ -216,4 +252,7 @@ module.exports = {
   createDoctor,
   createReferral,
   patchPatient,
+  getPatient,
+  registerTenant,
+  platformApproveTenant,
 };
