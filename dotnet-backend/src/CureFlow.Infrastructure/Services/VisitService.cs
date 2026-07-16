@@ -38,6 +38,17 @@ public class VisitService : IVisitService
 
     public async Task<Guid> CreateAsync(CreateVisitRequest req, CancellationToken ct = default)
     {
+        if (req.AppointmentId.HasValue)
+        {
+            var visitWhere = SqlFragments.WhereActive<Visit>(ignoreTenant: false);
+            var existing = await _db.QueryFirstOrDefaultAsync<Visit>(
+                $"""SELECT * FROM "Visits" WHERE "AppointmentId" = @appointmentId AND {visitWhere} ORDER BY "VisitDate" DESC LIMIT 1""",
+                new { appointmentId = req.AppointmentId.Value },
+                ct: ct);
+            if (existing != null)
+                return existing.Id;
+        }
+
         var patient = await _db.GetByIdAsync<Patient>(req.PatientId, ct: ct)
             ?? throw new NotFoundException("Patient");
 

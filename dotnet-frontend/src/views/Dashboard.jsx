@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import AppShell from "@/components/layout/AppShell";
 import CommandPalette from "@/components/layout/CommandPalette";
+import DoctorDashboard from "@/views/DoctorDashboard";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { Link, useNavigate } from "@/lib/navigation";
 import {
@@ -51,6 +52,15 @@ const AVATAR_GRADIENTS = [
 ];
 
 const Dashboard = () => {
+  const { user } = useAuth();
+  if (normalizeRole(user?.role) === "doctor") {
+    return <DoctorDashboard />;
+  }
+
+  return <OperationsDashboard />;
+};
+
+const OperationsDashboard = () => {
   const { user } = useAuth();
   const { can } = usePermissions();
   const showRevenue = can(PERMISSIONS.BillingView);

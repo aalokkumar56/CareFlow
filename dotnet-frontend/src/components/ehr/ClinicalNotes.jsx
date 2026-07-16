@@ -12,7 +12,14 @@ import {
 import { toast } from "sonner";
 import { Note, Plus, FirstAid, UsersFour, PencilSimple } from "@phosphor-icons/react";
 
-export const ClinicalNotes = ({ patientId, onDataChanged }) => {
+export const ClinicalNotes = ({
+  patientId,
+  onDataChanged,
+  visitId,
+  appointmentId,
+  autoOpen,
+  onAutoOpenHandled,
+}) => {
   const [items, setItems] = useState([]);
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({
@@ -26,6 +33,12 @@ export const ClinicalNotes = ({ patientId, onDataChanged }) => {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [patientId]);
 
+  useEffect(() => {
+    if (!autoOpen) return;
+    setShow(true);
+    onAutoOpenHandled?.();
+  }, [autoOpen, onAutoOpenHandled]);
+
   const notifyChange = () => {
     load();
     onDataChanged?.();
@@ -33,7 +46,12 @@ export const ClinicalNotes = ({ patientId, onDataChanged }) => {
 
   const save = async () => {
     try {
-      await api.post("/clinical/notes", { patient_id: patientId, ...form });
+      await api.post("/clinical/notes", {
+        patient_id: patientId,
+        appointment_id: appointmentId || undefined,
+        visit_id: visitId || undefined,
+        ...form,
+      });
       toast.success("Note saved");
       setForm({ note_type: "progress", subjective: "", objective: "", assessment: "", plan: "" });
       setShow(false);

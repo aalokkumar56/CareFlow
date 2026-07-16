@@ -1,0 +1,24 @@
+---
+description: Always run and verify after completing code changes
+alwaysApply: true
+---
+
+# Verify after code changes
+
+When implementation is complete, **run and test** before ending the turn — do not only describe what to run.
+
+## Required workflow
+
+1. **Build or compile** — e.g. `npm run build`, `dotnet build`, or equivalent for the touched stack.
+2. **Run targeted tests** — unit tests and/or E2E for the changed area; fix failures before finishing.
+3. **Smoke the app** when UI/routing/auth changed — start dev servers if needed, hit critical paths (login, navigation).
+4. **Stop dev servers** on ports 3000/5180 when done (see agent-testing-lifecycle rule).
+
+## When to skip
+
+- User explicitly asked for plan/review only with no code changes.
+- Environment blocker after retry — report what failed and what remains unverified.
+
+## Reporting
+
+Summarize: build result, tests run (pass/fail counts), and any unverified items.

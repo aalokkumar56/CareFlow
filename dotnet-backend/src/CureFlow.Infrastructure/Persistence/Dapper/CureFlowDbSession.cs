@@ -112,7 +112,11 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         var valueList = string.Join(", ", columns.Select(p => "@" + p.Name));
         var sql = $"""INSERT INTO "{table}" ({columnList}) VALUES ({valueList})""";
 
-        await ExecuteAsync(sql, entity, ignoreTenant, ct);
+        var param = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var column in columns)
+            param[column.Name] = column.GetValue(entity);
+
+        await ExecuteAsync(sql, param, ignoreTenant, ct);
     }
 
     public async Task UpdateAsync<T>(T entity, bool ignoreTenant = false, CancellationToken ct = default)
@@ -129,7 +133,15 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
             where.Append(' ').Append(SqlFragments.TenantFilter);
 
         var sql = $"""UPDATE "{table}" SET {setClause} {where}""";
-        await ExecuteAsync(sql, entity, ignoreTenant, ct);
+
+        var param = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [nameof(BaseEntity.Id)] = entity.Id,
+        };
+        foreach (var column in columns)
+            param[column.Name] = column.GetValue(entity);
+
+        await ExecuteAsync(sql, param, ignoreTenant, ct);
     }
 
     public async Task<T?> GetByIdAsync<T>(Guid id, bool ignoreTenant = false, CancellationToken ct = default)

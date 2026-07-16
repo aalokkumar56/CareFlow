@@ -1,5 +1,6 @@
 using CureFlow.Application.Common;
 using CureFlow.Infrastructure.Persistence;
+using CureFlow.Infrastructure.Persistence.Dapper;
 using CureFlow.Infrastructure.Persistence.Seeders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
@@ -19,8 +20,9 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
             .AddEnvironmentVariables()
             .Build();
 
-        var connectionString = config.GetConnectionString("Default")
-            ?? "Host=localhost;Port=5432;Database=cureflow;Username=postgres;Password=postgres";
+        var connectionString = CureFlowNpgsqlDataSource.Normalize(
+            config.GetConnectionString("Default")
+            ?? "Host=localhost;Port=5432;Database=cureflow;Username=postgres;Password=postgres");
 
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(connectionString)

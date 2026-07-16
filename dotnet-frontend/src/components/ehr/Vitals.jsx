@@ -14,7 +14,14 @@ const INTEGER_VITAL_FIELDS = new Set([
   "oxygen_saturation",
 ]);
 
-const Vitals = ({ patientId, onDataChanged }) => {
+const Vitals = ({
+  patientId,
+  onDataChanged,
+  visitId,
+  appointmentId,
+  autoOpen,
+  onAutoOpenHandled,
+}) => {
   const [items, setItems] = useState([]);
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({});
@@ -24,8 +31,18 @@ const Vitals = ({ patientId, onDataChanged }) => {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [patientId]);
 
+  useEffect(() => {
+    if (!autoOpen) return;
+    setShow(true);
+    onAutoOpenHandled?.();
+  }, [autoOpen, onAutoOpenHandled]);
+
   const save = async () => {
-    const payload = { patient_id: patientId };
+    const payload = {
+      patient_id: patientId,
+      appointment_id: appointmentId || undefined,
+      visit_id: visitId || undefined,
+    };
     Object.entries(form).forEach(([k, v]) => {
       if (v === "" || v === null || v === undefined) return;
       if (k === "notes") {

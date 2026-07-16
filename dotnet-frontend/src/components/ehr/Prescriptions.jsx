@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, normalizeApiError, openAuthorizedHtml } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,7 +7,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Pill, Plus, Trash, Pulse } from "@phosphor-icons/react";
+import { Pill, Plus, Trash, Pulse, Printer } from "@phosphor-icons/react";
 
 const emptyItem = () => ({
   drug_name: "", generic_name: "", strength: "", form: "tablet", route: "oral",
@@ -15,7 +15,17 @@ const emptyItem = () => ({
   reason_for_prescribing: "", possible_side_effects: "", patient_instructions: "", is_acute: true, is_continuation: false,
 });
 
-const Prescriptions = ({ patientId, patientName, doctorName, onDataChanged }) => {
+const Prescriptions = ({
+  patientId,
+  patientName,
+  doctorName,
+  onDataChanged,
+  visitId,
+  appointmentId,
+  chiefComplaint,
+  autoOpen,
+  onAutoOpenHandled,
+}) => {
   const [rxs, setRxs] = useState([]);
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({
@@ -33,6 +43,17 @@ const Prescriptions = ({ patientId, patientName, doctorName, onDataChanged }) =>
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [patientId]);
 
+  useEffect(() => {
+    if (!autoOpen) return;
+    setShow(true);
+    onAutoOpenHandled?.();
+  }, [autoOpen, onAutoOpenHandled]);
+
+  useEffect(() => {
+    if (!chiefComplaint || !show) return;
+    setForm((f) => (f.chief_complaint ? f : { ...f, chief_complaint: chiefComplaint }));
+  }, [chiefComplaint, show]);
+
   const updateItem = (idx, patch) => {
     setForm((f) => ({
       ...f,
@@ -44,6 +65,14 @@ const Prescriptions = ({ patientId, patientName, doctorName, onDataChanged }) =>
   const removeItem = (idx) =>
     setForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
 
+  const printRx = async (rxId) => {
+    try {
+      await openAuthorizedHtml(`/prescriptions/${rxId}/print`);
+    } catch (e) {
+      toast.error(e.message || "Failed to open print view");
+    }
+  };
+
   const save = async () => {
     const validItems = form.items.filter((i) => i.drug_name.trim() && i.reason_for_prescribing.trim());
     if (validItems.length === 0) {
@@ -51,8 +80,10 @@ const Prescriptions = ({ patientId, patientName, doctorName, onDataChanged }) =>
       return;
     }
     try {
-      await api.post("/prescriptions", {
+      const res = await api.post("/prescriptions", {
         patient_id: patientId,
+        appointment_id: appointmentId || null,
+        visit_id: visitId || null,
         diagnosis: form.diagnosis || null,
         chief_complaint: form.chief_complaint || null,
         clinical_notes: form.clinical_notes || null,
@@ -77,7 +108,13 @@ const Prescriptions = ({ patientId, patientName, doctorName, onDataChanged }) =>
         })),
         injections: [],
       });
-      toast.success("Prescription saved");
+      const rxId = res.data?.id;
+      toast.success("Prescription saved", {
+        action: rxId ? {
+          label: "Print",
+          onClick: () => printRx(rxId),
+        } : undefined,
+      });
       setShow(false);
       setForm({
         doctor_name: doctorName || "Dr.",
@@ -335,7 +372,7 @@ const Prescriptions = ({ patientId, patientName, doctorName, onDataChanged }) =>
         )}
         {rxs.map((rx) => (
           <div key={rx.id} className="px-5 py-4" data-testid={`rx-row-${rx.id}`}>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-start justify-between gap-2 mb-2">
               <div>
                 <div className="text-[13px] font-medium text-[#022C22]">
                   {rx.diagnosis || rx.chief_complaint || "Consultation"}
@@ -344,14 +381,27 @@ const Prescriptions = ({ patientId, patientName, doctorName, onDataChanged }) =>
                   {rx.doctor_name} · {new Date(rx.prescribed_at).toLocaleDateString()}
                 </div>
               </div>
-              {rx.next_visit_date && (
-                <div className="text-right">
-                  <div className="text-[10px] uppercase text-text-muted tracking-wider">Next visit</div>
-                  <div className="text-[12px] text-[#022C22]">
-                    {new Date(rx.next_visit_date).toLocaleDateString()}
+              <div className="flex items-center gap-2 shrink-0">
+                {rx.next_visit_date && (
+                  <div className="text-right">
+                    <div className="text-[10px] uppercase text-text-muted tracking-wider">Next visit</div>
+                    <div className="text-[12px] text-[#022C22]">
+                      {new Date(rx.next_visit_date).toLocaleDateString()}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-sm h-8"
+                  data-testid={`rx-print-${rx.id}`}
+                  onClick={() => printRx(rx.id)}
+                >
+                  <Printer weight="regular" className="w-3.5 h-3.5 mr-1" />
+                  Print
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-1.5 mt-2">

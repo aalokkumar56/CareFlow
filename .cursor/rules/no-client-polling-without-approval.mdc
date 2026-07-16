@@ -1,0 +1,23 @@
+---
+description: Do not add client-side polling or auto-refresh without explicit user approval
+alwaysApply: true
+---
+
+# No client-side polling without approval
+
+Before implementing any of the following, **ask the user first** and wait for explicit approval:
+
+- `setInterval` / `setTimeout` loops that call APIs
+- Background session refresh or status polling (e.g. every N seconds)
+- Automatic retry loops on lifecycle or approval screens
+- Any pattern that scales as `(active users × poll frequency)` API load
+
+## Preferred patterns for status checks
+
+- **Manual button** — user clicks to refresh (e.g. "Check approval status")
+- **Re-login** — fresh session on sign-in after ops action
+- **Server push** — email, webhook, or WebSocket (discuss with user before building)
+
+## Rationale
+
+Polling from many concurrent hospital admins (e.g. thousands on pending-approval) creates unnecessary load on CureFlow APIs. Manual or event-driven flows are the default.

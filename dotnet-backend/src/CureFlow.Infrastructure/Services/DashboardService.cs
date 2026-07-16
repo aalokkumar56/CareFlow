@@ -474,6 +474,113 @@ public class DashboardService : IDashboardService
         };
     }
 
+    public async Task<object> GetClinicalOverviewAsync(DateTime? date, string? scope, Guid? doctorUserId, CancellationToken ct = default)
+    {
+        var dayStart = DateTime.SpecifyKind((date ?? DateTime.UtcNow).Date, DateTimeKind.Utc);
+        var dayEnd = dayStart.AddDays(1);
+
+        var viewAll = string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase);
+        Guid? filterDoctorId = null;
+        if (!viewAll)
+        {
+            filterDoctorId = doctorUserId ?? _tenant.UserId;
+        }
+        else if (doctorUserId.HasValue)
+        {
+            filterDoctorId = doctorUserId;
+        }
+
+        string? doctorName = null;
+        if (_tenant.UserId.HasValue)
+        {
+            var userWhere = SqlFragments.WhereActive<User>(ignoreTenant: false);
+            var me = await _db.QueryFirstOrDefaultAsync<User>(
+                $"""SELECT * FROM "Users" WHERE "Id" = @id AND {userWhere}""",
+                new { id = _tenant.UserId.Value },
+                ct: ct);
+            doctorName = me?.Name;
+        }
+
+        var apptWhere = SqlFragments.WhereActive<Appointment>(ignoreTenant: false);
+        var filters = new List<string>
+        {
+            @"""ScheduledAt"" >= @dayStart",
+            @"""ScheduledAt"" < @dayEnd",
+        };
+        var param = SqlParam.Merge(new { dayStart, dayEnd });
+        if (filterDoctorId.HasValue)
+        {
+            filters.Add(@"""DoctorUserId"" = @filterDoctorId");
+            param["filterDoctorId"] = filterDoctorId.Value;
+        }
+
+        var extra = " AND " + string.Join(" AND ", filters);
+        var rows = await _db.QueryAsync<Appointment>(
+            $"""
+            SELECT * FROM "Appointments"
+            WHERE {apptWhere}{extra}
+            ORDER BY "ScheduledAt" ASC
+            """,
+            param,
+            ct: ct);
+
+        var appointments = rows.ToList();
+        var myUserId = _tenant.UserId;
+        var completed = appointments.Count(a => a.Status == AppointmentStatus.Completed);
+        var waitingCheckIn = appointments.Count(a => a.Status == AppointmentStatus.Scheduled);
+
+        var doctors = await _db.QueryAsync<DoctorOptionRow>(
+            $"""
+            SELECT DISTINCT u."Id" AS "UserId", u."Name" AS "Name"
+            FROM "Appointments" a
+            INNER JOIN "Users" u ON u."Id" = a."DoctorUserId"
+            WHERE a."TenantId" = @tenantId
+              AND a."IsDeleted" = false
+              AND u."TenantId" = @tenantId
+              AND u."IsDeleted" = false
+              AND a."ScheduledAt" >= @dayStart AND a."ScheduledAt" < @dayEnd
+            ORDER BY u."Name"
+            """,
+            new { tenantId = _tenant.TenantId, dayStart, dayEnd },
+            ct: ct);
+
+        return new
+        {
+            doctor_name = doctorName,
+            date = dayStart.ToString("yyyy-MM-dd"),
+            scope = viewAll ? "all" : "mine",
+            filter_doctor_user_id = filterDoctorId,
+            stats = new
+            {
+                appointments_today = appointments.Count,
+                completed_today = completed,
+                waiting_check_in = waitingCheckIn,
+            },
+            doctors = doctors.Select(d => new { user_id = d.UserId, name = d.Name }),
+            appointments_today = appointments.Select(a => new
+            {
+                a.Id,
+                patient_id = a.PatientId,
+                patient_name = a.PatientName,
+                patient_phone = a.PatientPhone,
+                doctor_user_id = a.DoctorUserId,
+                doctor_name = a.DoctorName,
+                a.Department,
+                scheduled_at = a.ScheduledAt,
+                status = a.Status.ToString().ToLowerInvariant(),
+                chief_complaint = a.ChiefComplaint,
+                notes = a.Notes,
+                is_mine = myUserId.HasValue && a.DoctorUserId == myUserId,
+            }),
+        };
+    }
+
+    private sealed class DoctorOptionRow
+    {
+        public Guid UserId { get; set; }
+        public string Name { get; set; } = "";
+    }
+
     private sealed class DeptCountRow
     {
         public string Name { get; set; } = "";

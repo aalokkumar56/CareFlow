@@ -74,15 +74,20 @@ public class PrescriptionService : IPrescriptionService
             }).ToList() ?? new List<Injection>(),
         };
 
+        var items = rx.Items.ToList();
+        var injections = rx.Injections.ToList();
+        rx.Items = new List<PrescriptionItem>();
+        rx.Injections = new List<Injection>();
+
         await _db.TransactionAsync(async session =>
         {
             await session.InsertAsync(rx, ct: ct);
-            foreach (var item in rx.Items)
+            foreach (var item in items)
             {
                 item.PrescriptionId = rx.Id;
                 await session.InsertAsync(item, ct: ct);
             }
-            foreach (var injection in rx.Injections)
+            foreach (var injection in injections)
             {
                 injection.PrescriptionId = rx.Id;
                 await session.InsertAsync(injection, ct: ct);

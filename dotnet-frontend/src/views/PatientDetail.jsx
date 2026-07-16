@@ -13,7 +13,7 @@ import {
 import {
   ChatCircleDots, CalendarBlank, ArrowLeft, ArrowRight,
   ClockCounterClockwise, Sparkle, Note, Warning, Heartbeat,
-  User, PencilSimple, Sun, Stethoscope, Pill, Syringe, Flask,
+  User, PencilSimple, Sun, Stethoscope, Pill, Syringe, Flask, Printer, CheckCircle,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,7 @@ import Prescriptions from "@/components/ehr/Prescriptions";
 import Vitals from "@/components/ehr/Vitals";
 import { ClinicalNotes, MedicalHistory, FamilyHistory } from "@/components/ehr/ClinicalNotes";
 import Lifestyle from "@/components/ehr/Lifestyle";
+import { useConsultationSession } from "@/hooks/useConsultationSession";
 
 const isSameDay = (dateStr) => {
   if (!dateStr) return false;
@@ -76,15 +77,18 @@ const PatientBreadcrumb = ({ name }) => (
 const PatientDetail = () => {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { canFetch } = usePermissions();
+  const { canFetch, can } = usePermissions();
   const canClinical = canFetch(PERMISSIONS.ClinicalView);
+  const canEditAppointment = can(PERMISSIONS.AppointmentEdit);
   const canWhatsApp = canFetch(PERMISSIONS.WhatsAppView) || canFetch(PERMISSIONS.WhatsAppSend);
+  const appointmentId = searchParams.get("appointment");
   const [data, setData] = useState(null);
   const [allergies, setAllergies] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [editForm, setEditForm] = useState({});
   const [activeTab, setActiveTab] = useState("today");
   const [overlayPanel, setOverlayPanel] = useState(null);
+  const [consultationAction, setConsultationAction] = useState(null);
 
   const applyPatientForm = useCallback((p) => {
     const gender = p.gender && String(p.gender).toLowerCase() !== "unknown" ? String(p.gender).toLowerCase() : "";
@@ -168,20 +172,44 @@ const PatientDetail = () => {
     return () => controller.abort();
   }, [id, canClinical, canWhatsApp, applyPatientForm]);
 
-  const refreshHolistic = () => {
+  const refreshHolistic = useCallback(() => {
     if (canClinical) loadHolistic();
     else loadBasic();
-  };
+  }, [canClinical, loadHolistic, loadBasic]);
 
   const handleTabChange = (tab) => {
     setOverlayPanel(null);
     setActiveTab(tab);
   };
 
+  const openConsultationTab = (tab) => {
+    setConsultationAction(tab);
+    handleTabChange(tab);
+  };
+
+  const {
+    visitId: consultationVisitId,
+    appointment: consultationAppointment,
+    starting: consultationStarting,
+    ready: consultationReady,
+    completeConsultation,
+  } = useConsultationSession({
+    patientId: id,
+    appointmentId,
+    appointments: data?.appointments,
+    canEditAppointment,
+    onRefresh: refreshHolistic,
+  });
+
   const openDetailsForEdit = (patient) => {
     applyPatientForm(patient);
     handleTabChange("details");
   };
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab) setActiveTab(tab);
+  }, [searchParams]);
 
   useEffect(() => {
     if (searchParams.get("edit") === "1" && data?.patient) {
@@ -328,6 +356,118 @@ const PatientDetail = () => {
           )}
         </GlassCard>
 
+        {appointmentId && canClinical && (
+          <GlassCard data-testid="consultation-panel" className="border-[#064E3B]/20">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-[#064E3B]">
+                    <Stethoscope weight="duotone" className="w-5 h-5" />
+                    <h3 className="font-heading font-semibold text-[#022C22]">Today&apos;s consultation</h3>
+                    {consultationStarting && (
+                      <span className="text-[11px] text-text-muted">Starting…</span>
+                    )}
+                    {consultationReady && (
+                      <span
+                        className="text-[10px] uppercase tracking-wider font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-sm border border-emerald-200"
+                        data-testid="consultation-visit-started"
+                      >
+                        Visit in progress
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[12px] text-text-secondary mt-1">
+                    Document vitals, clinical notes, and prescription — then print for the patient.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    data-testid="consultation-add-note"
+                    onClick={() => openConsultationTab("notes")}
+                  >
+                    Add note
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    data-testid="consultation-add-vitals"
+                    onClick={() => openConsultationTab("vitals")}
+                  >
+                    Record vitals
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    data-testid="consultation-new-rx"
+                    onClick={() => openConsultationTab("prescriptions")}
+                  >
+                    New prescription
+                  </Button>
+                  {canEditAppointment && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="rounded-xl bg-[#064E3B] hover:bg-[#022C22]"
+                      data-testid="consultation-complete"
+                      onClick={completeConsultation}
+                      disabled={consultationStarting}
+                    >
+                      <CheckCircle weight="bold" className="w-4 h-4 mr-1" />
+                      Complete visit
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {(consultationAppointment || p) && (
+                <div
+                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[12px] rounded-xl bg-white/40 border border-white/50 p-3"
+                  data-testid="consultation-demographics"
+                >
+                  <div>
+                    <span className="text-text-muted block text-[10px] uppercase tracking-wider">Patient</span>
+                    <span className="font-medium text-[#022C22]">{p.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block text-[10px] uppercase tracking-wider">Phone</span>
+                    <span>{formatPhone(p.phone)}</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block text-[10px] uppercase tracking-wider">Department</span>
+                    <span>{consultationAppointment?.department || p.department || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block text-[10px] uppercase tracking-wider">Appointment</span>
+                    <span>
+                      {consultationAppointment?.scheduled_at
+                        ? new Date(consultationAppointment.scheduled_at).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                        : "—"}
+                      {consultationAppointment?.doctor_name ? ` · ${consultationAppointment.doctor_name}` : ""}
+                    </span>
+                  </div>
+                  {consultationAppointment?.chief_complaint && (
+                    <div className="sm:col-span-2 lg:col-span-4">
+                      <span className="text-text-muted block text-[10px] uppercase tracking-wider">Chief complaint</span>
+                      <span>{consultationAppointment.chief_complaint}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </GlassCard>
+        )}
+
         {/* Main tabs */}
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList
@@ -373,6 +513,7 @@ const PatientDetail = () => {
               allergies={allergies}
               onNavigate={handleTabChange}
               onOpenEdit={() => openDetailsForEdit(p)}
+              highlightAppointmentId={appointmentId}
             />
           </TabsContent>
 
@@ -395,17 +536,40 @@ const PatientDetail = () => {
           </TabsContent>
           <TabsContent value="prescriptions" className="mt-3">
             {activeTab === "prescriptions" && canClinical && (
-              <Prescriptions patientId={id} doctorName={p.referral_doctor} onDataChanged={refreshHolistic} />
+              <Prescriptions
+                patientId={id}
+                doctorName={p.referral_doctor}
+                onDataChanged={refreshHolistic}
+                visitId={consultationVisitId}
+                appointmentId={appointmentId}
+                chiefComplaint={consultationAppointment?.chief_complaint}
+                autoOpen={consultationAction === "prescriptions"}
+                onAutoOpenHandled={() => setConsultationAction(null)}
+              />
             )}
           </TabsContent>
           <TabsContent value="vitals" className="mt-3">
             {activeTab === "vitals" && canClinical && (
-              <Vitals patientId={id} onDataChanged={refreshHolistic} />
+              <Vitals
+                patientId={id}
+                onDataChanged={refreshHolistic}
+                visitId={consultationVisitId}
+                appointmentId={appointmentId}
+                autoOpen={consultationAction === "vitals"}
+                onAutoOpenHandled={() => setConsultationAction(null)}
+              />
             )}
           </TabsContent>
           <TabsContent value="notes" className="mt-3">
             {activeTab === "notes" && canClinical && (
-              <ClinicalNotes patientId={id} onDataChanged={refreshHolistic} />
+              <ClinicalNotes
+                patientId={id}
+                onDataChanged={refreshHolistic}
+                visitId={consultationVisitId}
+                appointmentId={appointmentId}
+                autoOpen={consultationAction === "notes"}
+                onAutoOpenHandled={() => setConsultationAction(null)}
+              />
             )}
           </TabsContent>
           <TabsContent value="history" className="mt-3 space-y-4">
@@ -465,7 +629,7 @@ const EmptySection = ({ message }) => (
   <div className="text-[13px] text-text-muted py-4 text-center">{message}</div>
 );
 
-const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit }) => {
+const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit, highlightAppointmentId }) => {
   const p = data.patient;
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -497,6 +661,14 @@ const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit }) => {
     .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
     .slice(0, 5);
 
+  const printRx = async (rxId) => {
+    try {
+      await openAuthorizedHtml(`/prescriptions/${rxId}/print`);
+    } catch (e) {
+      toast.error(normalizeApiError(e, "Failed to open print view"));
+    }
+  };
+
   return (
     <div className="space-y-4" data-testid="today-overview">
       <div className="text-[12px] text-text-secondary">
@@ -514,7 +686,11 @@ const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit }) => {
         ) : (
           <div className="space-y-3">
             {todayAppointments.map((a) => (
-              <AppointmentRow key={a.id} a={a} />
+              <AppointmentRow
+                key={a.id}
+                a={a}
+                highlighted={highlightAppointmentId && String(a.id) === String(highlightAppointmentId)}
+              />
             ))}
           </div>
         )}
@@ -664,9 +840,22 @@ const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit }) => {
           ) : (
             <div className="space-y-2">
               {todayPrescriptions.map((rx) => (
-                <div key={rx.id} className="text-[12px] text-[#022C22]">
-                  <span className="font-medium">{rx.doctor_name || "—"}</span>
-                  {rx.diagnosis && <span className="text-text-secondary"> · {rx.diagnosis}</span>}
+                <div key={rx.id} className="flex items-center justify-between gap-2 text-[12px] text-[#022C22]">
+                  <div>
+                    <span className="font-medium">{rx.doctor_name || "—"}</span>
+                    {rx.diagnosis && <span className="text-text-secondary"> · {rx.diagnosis}</span>}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-sm h-7 text-[11px]"
+                    data-testid={`today-rx-print-${rx.id}`}
+                    onClick={() => printRx(rx.id)}
+                  >
+                    <Printer weight="regular" className="w-3 h-3 mr-1" />
+                    Print
+                  </Button>
                 </div>
               ))}
             </div>
@@ -687,8 +876,15 @@ const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit }) => {
   );
 };
 
-const AppointmentRow = ({ a }) => (
-  <div className="border border-subtle rounded-sm p-3 bg-secondary/20">
+const AppointmentRow = ({ a, highlighted = false }) => (
+  <div
+    className={`border rounded-sm p-3 ${
+      highlighted
+        ? "border-[#064E3B] bg-primary-soft ring-1 ring-[#064E3B]/20"
+        : "border-subtle bg-secondary/20"
+    }`}
+    data-testid={highlighted ? "consultation-appointment-highlight" : undefined}
+  >
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <div className="text-[13px] font-semibold text-[#022C22]">
