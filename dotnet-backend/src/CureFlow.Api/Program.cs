@@ -55,15 +55,11 @@ await using (var scope = app.Services.CreateAsyncScope())
     }
     else if (builder.Configuration.GetValue("Database:SeedPlatformUsers", defaultValue: false))
     {
-        if (app.Environment.IsProduction())
-        {
-            logger.LogWarning(
-                "Database:SeedPlatformUsers is ignored in Production. Create platform users via a secure ops process.");
-        }
-        else
-        {
-            await PlatformUserSeeder.SeedAsync(session, hasher);
-        }
+        // Explicit one-shot bootstrap (safe to leave true briefly in Production).
+        // PlatformUserSeeder no-ops if ops@cureflow.in already exists.
+        logger.LogWarning(
+            "Seeding platform ops user (Database:SeedPlatformUsers=true). Turn this off after first login.");
+        await PlatformUserSeeder.SeedAsync(session, hasher);
     }
 }
 
