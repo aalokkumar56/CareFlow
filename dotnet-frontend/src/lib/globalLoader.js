@@ -62,6 +62,7 @@ export const shouldSkipGlobalLoader = (config = {}) => {
 
   const url = String(config.url || "");
   if (url.includes("/auth/login") || url.includes("/auth/me") || url.includes("/auth/session")) return true;
+  if (url.includes("/public/tenant")) return true;
 
   return false;
 };
