@@ -155,6 +155,7 @@ export const PERMISSION_LABELS = {
 
 /** Decode permission claims from JWT when user object lacks permissions. */
 export const getPermissionsFromToken = () => {
+  if (typeof window === "undefined") return [];
   try {
     const token = localStorage.getItem("cureflow_token");
     if (!token) return [];

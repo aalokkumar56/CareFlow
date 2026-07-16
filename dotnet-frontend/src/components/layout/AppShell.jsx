@@ -9,6 +9,7 @@ import { SignOut } from "@phosphor-icons/react";
 import { formatRole } from "@/lib/permissions";
 import { useHospitalProfile } from "@/hooks/useHospitalProfile";
 import NotificationDropdown from "@/components/notifications/NotificationDropdown";
+import { useMounted } from "@/hooks/useMounted";
 import { cn } from "@/lib/utils";
 
 const AppShell = ({
@@ -32,12 +33,15 @@ const AppShell = ({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { user, logout } = useAuth();
   const { hospitalName } = useHospitalProfile();
+  const mounted = useMounted();
 
-  const todayLabel = new Date().toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  const todayLabel = mounted
+    ? new Date().toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "";
 
   const isDashboard = variant === "dashboard";
 

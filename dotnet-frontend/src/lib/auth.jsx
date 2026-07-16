@@ -1,13 +1,36 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useState,
+} from "react";
 import { api } from "@/lib/api";
 
 const AuthContext = createContext(null);
 
 let authMeInflight = null;
 
+const readStorage = (key) => {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const readCachedUser = () => {
+  try {
+    const raw = readStorage("cureflow_user");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 /** Deduplicated /auth/me — parallel callers share one request. */
 export const fetchAuthMe = () => {
-  const token = localStorage.getItem("cureflow_token");
+  const token = readStorage("cureflow_token");
   if (!token) return Promise.reject(new Error("No token"));
   if (!authMeInflight) {
     authMeInflight = api.get("/auth/me").finally(() => {
@@ -18,27 +41,30 @@ export const fetchAuthMe = () => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    try {
-      const raw = localStorage.getItem("cureflow_user");
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) { return null; }
-  });
-  const [loading, setLoading] = useState(() => {
-    const token = localStorage.getItem("cureflow_token");
-    const cached = localStorage.getItem("cureflow_user");
-    return Boolean(token && !cached);
-  });
+  // SSR + first client paint stay identical; bootstrap from storage before paint.
+  const [bootstrapped, setBootstrapped] = useState(false);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [ready, setReady] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let active = true;
+    const token = readStorage("cureflow_token");
+    const cachedUser = readCachedUser();
 
-    const token = localStorage.getItem("cureflow_token");
     if (!token) {
+      setUser(null);
       setLoading(false);
       setReady(true);
+      setBootstrapped(true);
       return () => { active = false; };
+    }
+
+    if (cachedUser) {
+      setUser(cachedUser);
+      setLoading(false);
+      setReady(true);
+      setBootstrapped(true);
     }
 
     fetchAuthMe()
@@ -57,6 +83,7 @@ export const AuthProvider = ({ children }) => {
         if (!active) return;
         setLoading(false);
         setReady(true);
+        setBootstrapped(true);
       });
 
     return () => { active = false; };
@@ -70,6 +97,7 @@ export const AuthProvider = ({ children }) => {
     setUser(meRes.data);
     setReady(true);
     setLoading(false);
+    setBootstrapped(true);
     return meRes.data;
   };
 
@@ -78,14 +106,33 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("cureflow_user");
     setUser(null);
     setReady(true);
+    setLoading(false);
     window.location.href = "/login";
   };
 
+  const value = bootstrapped
+    ? { user, loading, ready, login, logout }
+    : { user: null, loading: true, ready: false, login, logout };
+
   return (
-    <AuthContext.Provider value={{ user, loading, ready, login, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    return {
+      user: null,
+      loading: true,
+      ready: false,
+      login: async () => {
+        throw new Error("AuthProvider is missing");
+      },
+      logout: () => {},
+    };
+  }
+  return ctx;
+};

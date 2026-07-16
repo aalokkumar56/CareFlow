@@ -2,6 +2,8 @@
  * Central E2E test matrix — all routes from App.js, role/viewport/filter dimensions,
  * and scenario counting for TEST_MATRIX.md.
  */
+const fs = require("fs");
+const path = require("path");
 const { PERMISSIONS } = require("../../src/lib/permissions");
 const {
   MAIN_ROUTES,
@@ -58,16 +60,24 @@ const PATIENT_STATUS_FILTERS = [
   "Follow-up Pending",
   "No Response",
 ];
-const PATIENT_DEPT_FILTERS = [
-  "All Departments",
-  "Cardiology",
-  "Orthopedics",
-  "Neurology",
-  "General",
-  "Dermatology",
-  "ENT",
-  "Pediatrics",
-];
+const PATIENT_DEPT_FILTERS_FALLBACK = ["All Departments", "Cardiology", "Orthopedics"];
+
+/** Loaded from global-setup cache of GET /hospital-profile/departments when available. */
+function loadPatientDeptFilters() {
+  try {
+    const cached = JSON.parse(
+      fs.readFileSync(path.join(__dirname, ".e2e-departments.json"), "utf8"),
+    );
+    if (Array.isArray(cached) && cached.length) {
+      return ["All Departments", ...cached];
+    }
+  } catch {
+    /* global-setup not run yet */
+  }
+  return PATIENT_DEPT_FILTERS_FALLBACK;
+}
+
+const PATIENT_DEPT_FILTERS = loadPatientDeptFilters();
 const PATIENT_SOURCE_FILTERS = [
   "All Sources",
   "WhatsApp",

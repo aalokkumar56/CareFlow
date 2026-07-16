@@ -1,0 +1,4 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "ignorePatterns": ["**/*.test.js", "**/*.test.jsx", "**/*.spec.js", "**/*.spec.jsx"]
+}

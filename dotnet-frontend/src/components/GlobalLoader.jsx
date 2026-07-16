@@ -6,7 +6,11 @@ import {
 } from "@/lib/globalLoader";
 
 const GlobalLoader = () => {
-  const visible = useSyncExternalStore(subscribeGlobalLoader, getGlobalLoaderVisible);
+  const visible = useSyncExternalStore(
+    subscribeGlobalLoader,
+    getGlobalLoaderVisible,
+    () => false,
+  );
 
   if (!visible) return null;
 

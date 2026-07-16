@@ -158,6 +158,9 @@
     min-height: var(--dashboard-bottom-h);
     height: 100%;
   }
+  .dashboard-main-grid--clinical .dashboard-cell-bottom-right {
+    grid-column: 1 / -1;
+  }
   .dashboard-revenue-inner {
     flex: 1 1 auto;
     min-height: 0;

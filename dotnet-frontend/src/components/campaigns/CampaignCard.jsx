@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/navigation";
 import { WhatsappLogo, DotsThreeVertical, CalendarBlank, Users, Checks } from "@phosphor-icons/react";
 import StatusPill from "@/components/glass/StatusPill";
 import { cn } from "@/lib/utils";

@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink } from "@/lib/navigation";
 import {
   House, UsersThree, CalendarBlank,
   ListChecks, GearSix, Sparkle, ChartBar,
@@ -24,9 +24,10 @@ export const navItems = [
   { to: "/staff", label: "Hospital Staff", testId: "nav-hospital-staff", icon: UserCircle, anyPermission: [PERMISSIONS.StaffView, PERMISSIONS.ClinicalView] },
 ];
 
-const navLinkClass = (isActive) =>
+const navLinkClass = (isActive, pending = false) =>
   cn(
     "flex items-center gap-3 px-3.5 min-h-[44px] rounded-xl text-ui-base transition-colors duration-200",
+    pending && "opacity-70",
     isActive
       ? "sidebar-nav-active text-[#064E3B]"
       : "text-[#4B5563] hover:bg-white/50 hover:text-[#022C22]",
@@ -49,8 +50,8 @@ export const SidebarNav = ({ onNavigate, className, includeSettings = false }) =
           onClick={onNavigate}
           data-testid={item.testId || `nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
         >
-          {({ isActive }) => (
-            <div className={navLinkClass(isActive)}>
+          {({ isActive, pending }) => (
+            <div className={navLinkClass(isActive, pending)}>
               <item.icon weight={isActive ? "fill" : "regular"} className="w-[18px] h-[18px] shrink-0" />
               <span className="flex-1 truncate">{item.label}</span>
               {item.badge && (
@@ -65,8 +66,8 @@ export const SidebarNav = ({ onNavigate, className, includeSettings = false }) =
 
       {showSettings && (
         <NavLink to="/settings" onClick={onNavigate} data-testid="nav-settings">
-          {({ isActive }) => (
-            <div className={cn(navLinkClass(isActive), "mt-1")}>
+          {({ isActive, pending }) => (
+            <div className={cn(navLinkClass(isActive, pending), "mt-1")}>
               <GearSix weight={isActive ? "fill" : "regular"} className="w-[18px] h-[18px]" />
               <span>Settings</span>
             </div>
@@ -84,8 +85,8 @@ export const SidebarSettingsLink = ({ onNavigate }) => {
   return (
     <div className="shrink-0 px-2.5 pb-1 border-t border-white/40 pt-2">
       <NavLink to="/settings" onClick={onNavigate} data-testid="nav-settings">
-        {({ isActive }) => (
-          <div className={navLinkClass(isActive)}>
+        {({ isActive, pending }) => (
+          <div className={navLinkClass(isActive, pending)}>
             <GearSix weight={isActive ? "fill" : "regular"} className="w-[18px] h-[18px]" />
             <span>Settings</span>
           </div>

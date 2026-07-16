@@ -5,7 +5,7 @@ import usePermissions from "@/hooks/usePermissions";
 import { PERMISSIONS } from "@/lib/permissions";
 
 export const useDashboardData = () => {
-  const { user, ready } = useAuth();
+  const { user } = useAuth();
   const { canFetch } = usePermissions();
   const canViewDashboard = canFetch(PERMISSIONS.DashboardView);
   const [overview, setOverview] = useState(null);
@@ -13,8 +13,8 @@ export const useDashboardData = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!ready || !user) {
-      if (ready && !user) setLoading(false);
+    if (!user) {
+      setLoading(false);
       return;
     }
     if (!canViewDashboard) {
@@ -49,7 +49,7 @@ export const useDashboardData = () => {
       cancelled = true;
       controller.abort();
     };
-  }, [ready, user, canViewDashboard]);
+  }, [user, canViewDashboard]);
 
   return { overview, missedRevenue, loading };
 };

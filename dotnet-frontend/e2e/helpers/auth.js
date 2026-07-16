@@ -17,6 +17,9 @@ async function login(page, {
       localStorage.setItem("cureflow_token", tokenValue);
       localStorage.setItem("cureflow_user", JSON.stringify(userValue));
     }, { tokenValue: token, userValue: user });
+    // Root layout keeps AuthProvider mounted across client navigations; reload so
+    // useState initializers pick up the seeded session (Next.js App Router).
+    await page.reload({ waitUntil: "domcontentloaded" });
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 20_000 });
     return;
@@ -42,7 +45,9 @@ async function login(page, {
 /** @param {import('@playwright/test').Page} page */
 async function selectRadixOption(page, triggerTestId, optionText) {
   await page.getByTestId(triggerTestId).click();
-  await page.getByRole("option", { name: optionText, exact: true }).click();
+  const option = page.getByRole("option", { name: optionText, exact: true });
+  await option.waitFor({ state: "visible", timeout: 10_000 });
+  await option.click();
 }
 
 module.exports = { login, selectRadixOption };

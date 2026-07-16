@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/navigation";
 import {
   X, Phone, ChatCircleDots, EnvelopeSimple, DotsThree,
   Copy, CalendarBlank, PencilSimple, ArrowRight,

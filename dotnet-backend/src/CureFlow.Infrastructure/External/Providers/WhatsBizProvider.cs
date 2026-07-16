@@ -307,31 +307,13 @@ public class WhatsBizProvider : IWhatsappProvider
     public bool VerifyWebhookSubscription(string mode, string token, out string? challenge, string? challengeParam = null)
     {
         challenge = challengeParam;
-        var settings = _settingsService.GetAsync().GetAwaiter().GetResult();
+        var settings = _settingsService.GetForWebhookAsync().GetAwaiter().GetResult();
         var expected = settings.VerifyToken;
         return mode == "subscribe" && !string.IsNullOrEmpty(expected) && token == expected;
     }
 
     public Task ProcessIncomingWebhookAsync(string body, string? signatureHeader, CancellationToken ct = default)
-        => ProcessIncomingWebhookCoreAsync(body, signatureHeader, ct);
-
-    private async Task ProcessIncomingWebhookCoreAsync(string body, string? signatureHeader, CancellationToken ct)
-    {
-        var appSecret = await ResolveAppSecretAsync(ct);
-        if (!string.IsNullOrEmpty(appSecret) && !WhatsappWebhookProcessor.VerifyMetaSignature(body, signatureHeader, appSecret))
-        {
-            _logger.LogWarning("Invalid WhatsApp webhook signature");
-            return;
-        }
-
-        await WhatsappWebhookProcessor.ProcessAsync(body, ct, _services);
-    }
-
-    private async Task<string?> ResolveAppSecretAsync(CancellationToken ct)
-    {
-        var settings = await _settingsService.GetAsync(ct);
-        return settings.AppSecret;
-    }
+        => WhatsappWebhookProcessor.ProcessAsync(body, signatureHeader, ct, _services);
 
     private async Task<string?> ResolveApiTokenAsync(CancellationToken ct)
     {

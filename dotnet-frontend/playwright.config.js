@@ -42,4 +42,15 @@ module.exports = defineConfig({
   globalSetup: require.resolve("./e2e/global-setup.js"),
   globalTeardown: require.resolve("./e2e/global-teardown.js"),
   metadata: { apiURL, screenshotBase: SCREENSHOT_BASE },
+  webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
+    ? undefined
+    : {
+        command: "npm run dev",
+        url: `${baseURL}/login`,
+        reuseExistingServer: !process.env.CI,
+        timeout: 120_000,
+        cwd: __dirname,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
 });

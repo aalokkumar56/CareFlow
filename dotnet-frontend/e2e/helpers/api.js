@@ -157,6 +157,15 @@ async function createTask(token, { title, dueAt }) {
   });
 }
 
+/** @param {string} token @returns {Promise<string[]>} */
+async function getDepartments(token) {
+  const data = await apiRequest(token, "GET", "/hospital-profile/departments");
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((d) => (typeof d === "string" ? d : d?.name))
+    .filter(Boolean);
+}
+
 /** @param {string} token */
 async function listDoctors(token) {
   return apiRequest(token, "GET", "/doctors");
@@ -202,6 +211,7 @@ module.exports = {
   createUser,
   ensureNotificationTypesEnabled,
   createTask,
+  getDepartments,
   listDoctors,
   createDoctor,
   createReferral,
