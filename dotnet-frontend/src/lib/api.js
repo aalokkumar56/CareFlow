@@ -34,7 +34,15 @@ export const normalizeApiError = (error, fallbackMessage = "Request failed") => 
   const status = error?.response?.status;
   const data = error?.response?.data;
 
-  if (status === 403) return STATUS_MESSAGES[403];
+  if (status === 403) {
+    if (data?.error === "tenant_pending_approval") {
+      return "Your hospital is awaiting CureFlow approval. Sign in to check status.";
+    }
+    if (data?.error === "onboarding_incomplete") {
+      return "Complete onboarding to access this feature.";
+    }
+    return STATUS_MESSAGES[403];
+  }
   if (status === 401) return STATUS_MESSAGES[401];
   if (status === 422) {
     if (data?.errors && typeof data.errors === "object") {
@@ -70,6 +78,8 @@ export const toastApiError = (error, fallbackMessage = "Request failed") => {
 /** In-flight deduplication for identical GET requests (e.g. StrictMode double-mount). */
 const inflightGets = new Map();
 
+let __dbgApiCount = 0;
+
 const getRequestKey = (config) => {
   const method = String(config.method || "get").toLowerCase();
   const base = config.baseURL || "";
@@ -102,6 +112,13 @@ export const apiPatch = async (url, payload) => (await api.patch(url, payload)).
 export const apiDelete = async (url) => (await api.delete(url)).data;
 
 api.interceptors.request.use((cfg) => {
+  __dbgApiCount += 1;
+  const n = __dbgApiCount;
+  // #region agent log
+  if (n <= 5 || n % 15 === 0) {
+    fetch('http://127.0.0.1:7396/ingest/71a493aa-be86-4272-b3f4-088f0dfe3f3f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a6e1ca'},body:JSON.stringify({sessionId:'a6e1ca',location:'api.js:request',message:'api_request',data:{count:n,method:String(cfg.method||'get').toUpperCase(),url:String(cfg.url||'')},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+  }
+  // #endregion
   const token = localStorage.getItem("cureflow_token");
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
 

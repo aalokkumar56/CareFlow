@@ -29,6 +29,9 @@ public class ApplicationDbContext : DbContext
     // SaaS
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();
+    public DbSet<TenantOnboardingState> TenantOnboardingStates => Set<TenantOnboardingState>();
+    public DbSet<PlatformAuditLog> PlatformAuditLogs => Set<PlatformAuditLog>();
 
     // CRM core
     public DbSet<Patient> Patients => Set<Patient>();
@@ -133,6 +136,9 @@ public class ApplicationDbContext : DbContext
 
         // Indexes & uniques
         mb.Entity<Tenant>().HasIndex(t => t.Slug).IsUnique();
+        mb.Entity<Tenant>().HasIndex(t => t.LifecycleStatus);
+        mb.Entity<PlatformUser>().HasIndex(p => p.Email).IsUnique();
+        mb.Entity<TenantOnboardingState>().HasIndex(o => o.TenantId).IsUnique();
         mb.Entity<User>().HasIndex(u => new { u.TenantId, u.Email }).IsUnique();
         mb.Entity<Patient>().HasIndex(p => new { p.TenantId, p.Phone });
         mb.Entity<Patient>().HasIndex(p => new { p.TenantId, p.Status });

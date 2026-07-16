@@ -79,6 +79,10 @@ public static class ServiceCollectionExtensions
             options.Providers.Add<GzipCompressionProvider>();
         });
 
+        var envName = config["ASPNETCORE_ENVIRONMENT"] ?? Environments.Production;
+        var relaxedRateLimits = envName is "Development" or "Testing"
+            || config.GetValue<bool>("RateLimiting:Relaxed");
+
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -88,7 +92,7 @@ public static class ServiceCollectionExtensions
                     _ => new FixedWindowRateLimiterOptions
                     {
                         Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 10,
+                        PermitLimit = relaxedRateLimits ? 1000 : 10,
                         QueueLimit = 0,
                     }));
             options.AddPolicy("register-tenant", httpContext =>
@@ -97,7 +101,7 @@ public static class ServiceCollectionExtensions
                     _ => new FixedWindowRateLimiterOptions
                     {
                         Window = TimeSpan.FromMinutes(10),
-                        PermitLimit = 3,
+                        PermitLimit = relaxedRateLimits ? 100 : 3,
                         QueueLimit = 0,
                     }));
         });
@@ -133,6 +137,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IPlatformAuthService, PlatformAuthService>();
+        services.AddScoped<IOnboardingService, OnboardingService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<IPatientService, PatientService>();
         services.AddScoped<ILifestyleService, LifestyleService>();
@@ -196,6 +202,10 @@ public static class ServiceCollectionExtensions
                 options.AddPolicy(CureFlowPermissions.PolicyName(permission), policy =>
                     policy.AddRequirements(new PermissionRequirement(permission)));
             }
+
+            options.AddPolicy("PlatformUser", policy =>
+                policy.RequireAuthenticatedUser()
+                    .RequireClaim("platform_user", "true"));
         });
 
         return services;
@@ -229,9 +239,11 @@ public static class ServiceCollectionExtensions
         app.UseCors();
         app.UseRateLimiter();
         app.UseMiddleware<ExceptionMiddleware>();
+        app.UseMiddleware<TenantResolutionMiddleware>();
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseMiddleware<TenantMiddleware>();
+        app.UseMiddleware<TenantLifecycleMiddleware>();
         app.MapControllers();
 
         return app;

@@ -22,5 +22,13 @@ public class Tenant : BaseEntity
     public int SeatLimit { get; set; } = 5;
     public int PatientLimit { get; set; } = 500;
     public int MessagesQuotaMonthly { get; set; } = 1000;
+
+    /// <summary>Approval gate — new signups start PendingApproval until platform ops approves.</summary>
+    public TenantLifecycleStatus LifecycleStatus { get; set; } = TenantLifecycleStatus.PendingApproval;
+    public DateTime? ApprovedAt { get; set; }
+    public Guid? ApprovedByPlatformUserId { get; set; }
+    public string? RejectionReason { get; set; }
+    public bool OnboardingComplete { get; set; }
+
     public ICollection<User> Users { get; set; } = new List<User>();
 }

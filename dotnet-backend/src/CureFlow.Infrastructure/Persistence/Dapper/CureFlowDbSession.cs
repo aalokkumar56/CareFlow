@@ -46,7 +46,7 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         bool ignoreTenant = false,
         CancellationToken ct = default)
     {
-        await using var scope = await OpenScopeAsync();
+        await using var scope = await OpenScopeAsync(ignoreTenant, ct);
         var command = new CommandDefinition(
             sql,
             MergeParams(param, ignoreTenant),
@@ -62,7 +62,7 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         bool ignoreTenant = false,
         CancellationToken ct = default)
     {
-        await using var scope = await OpenScopeAsync();
+        await using var scope = await OpenScopeAsync(ignoreTenant, ct);
         var command = new CommandDefinition(
             sql,
             MergeParams(param, ignoreTenant),
@@ -77,7 +77,7 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         bool ignoreTenant = false,
         CancellationToken ct = default)
     {
-        await using var scope = await OpenScopeAsync();
+        await using var scope = await OpenScopeAsync(ignoreTenant, ct);
         var command = new CommandDefinition(
             sql,
             MergeParams(param, ignoreTenant),
@@ -92,7 +92,7 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         bool ignoreTenant = false,
         CancellationToken ct = default)
     {
-        await using var scope = await OpenScopeAsync();
+        await using var scope = await OpenScopeAsync(ignoreTenant, ct);
         var command = new CommandDefinition(
             sql,
             MergeParams(param, ignoreTenant),
@@ -160,6 +160,11 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
     public async Task TransactionAsync(Func<ICureFlowDbSession, Task> action, CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(CancellationToken.None);
+        await PostgresRlsSession.ConfigureAsync(
+            connection,
+            _tenant.TenantId,
+            platformBypass: _tenant.TenantId == Guid.Empty,
+            ct: CancellationToken.None);
         await using var transaction = await connection.BeginTransactionAsync(CancellationToken.None);
 
         var session = new CureFlowDbSession(_dataSource, _tenant, connection, transaction);
@@ -196,12 +201,18 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         return merged;
     }
 
-    private async Task<ConnectionScope> OpenScopeAsync()
+    private async Task<ConnectionScope> OpenScopeAsync(bool ignoreTenant, CancellationToken ct)
     {
         if (_connection is not null)
             return new ConnectionScope(_connection, _transaction, ownsConnection: false);
 
+        // RLS setup must complete before any tenant-scoped SQL and before the
+        // connection returns to the pool. Use CancellationToken.None here (same as
+        // TransactionAsync) so aborted HTTP requests do not leave pooled connections
+        // in a half-configured state or surface OperationCanceledException as 500s.
         var connection = await _dataSource.OpenConnectionAsync(CancellationToken.None);
+        var platformBypass = ignoreTenant && _tenant.TenantId == Guid.Empty;
+        await PostgresRlsSession.ConfigureAsync(connection, _tenant.TenantId, platformBypass, CancellationToken.None);
         return new ConnectionScope(connection, null, ownsConnection: true);
     }
 

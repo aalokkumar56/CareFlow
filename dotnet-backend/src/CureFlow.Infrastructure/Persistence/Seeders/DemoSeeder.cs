@@ -59,6 +59,12 @@ public static class DemoSeeder
             await db.InsertAsync(tenant, ignoreTenant: true, ct: ct);
         }
 
+        tenant.LifecycleStatus = TenantLifecycleStatus.Active;
+        tenant.OnboardingComplete = true;
+        tenant.IsActive = true;
+        tenant.ApprovedAt ??= DateTime.UtcNow;
+        await db.UpdateAsync(tenant, ignoreTenant: true, ct: ct);
+
         var admin = await db.QueryFirstOrDefaultAsync<User>(
             """
             SELECT * FROM "Users"

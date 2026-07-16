@@ -58,13 +58,18 @@ await using (var scope = app.Services.CreateAsyncScope())
     if (builder.Configuration.GetValue<bool>("Database:Seed"))
     {
         await DemoSeeder.SeedAsync(session, hasher);
+        await PlatformUserSeeder.SeedAsync(session, hasher);
+        await RbacSeeder.SeedAsync(session);
+        await MultiHospitalE2eSeeder.SeedAsync(session, hasher);
+        // Pick up template placeholders / quick templates for newly seeded tenants.
         await RbacSeeder.SeedAsync(session);
 
         if (builder.Configuration.GetValue<bool>("WhatsApp:UseTestPhone"))
         {
             var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("TestPhoneSeeder");
-            await TestPhoneSeeder.SeedAsync(session, logger);
+            var scopeSlug = builder.Configuration["WhatsApp:TestPhoneTenantSlug"];
+            await TestPhoneSeeder.SeedAsync(session, logger, scopeSlug);
         }
     }
 }

@@ -14,6 +14,17 @@ public class TenantMiddleware
     {
         if (tenantContext is CurrentTenant current && ctx.User?.Identity?.IsAuthenticated == true)
         {
+            if (ctx.User.HasClaim("platform_user", "true"))
+            {
+                current.IsAuthenticated = true;
+                var platformSub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ctx.User.FindFirstValue("sub");
+                if (Guid.TryParse(platformSub, out var platformUserId))
+                    current.UserId = platformUserId;
+                current.UserEmail = ctx.User.FindFirstValue(ClaimTypes.Email);
+                await _next(ctx);
+                return;
+            }
+
             var tenantClaim = ctx.User.FindFirstValue("tenant_id");
             var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? ctx.User.FindFirstValue("sub");
             if (Guid.TryParse(tenantClaim, out var tid)) current.TenantId = tid;

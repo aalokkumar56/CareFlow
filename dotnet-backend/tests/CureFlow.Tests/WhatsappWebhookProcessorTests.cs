@@ -1,11 +1,51 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using CureFlow.Infrastructure.External;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace CureFlow.Tests;
+
+public class WhatsappWebhookRoutingTests
+{
+    [Fact]
+    public void ExtractPhoneNumberId_reads_whatsbiz_root_field()
+    {
+        using var doc = JsonDocument.Parse(
+            """{"event":"message_received","phone_number_id":"e2e-care-cure-althan","from":"+919100000001"}""");
+        WhatsappWebhookProcessor.ExtractPhoneNumberId(doc.RootElement)
+            .Should().Be("e2e-care-cure-althan");
+    }
+
+    [Fact]
+    public void ExtractPhoneNumberId_reads_meta_metadata_field()
+    {
+        using var doc = JsonDocument.Parse(
+            """
+            {
+              "entry": [{
+                "changes": [{
+                  "value": {
+                    "metadata": { "phone_number_id": "e2e-city-hospital-surat" },
+                    "messages": [{ "from": "919100000002", "text": { "body": "Hi" } }]
+                  }
+                }]
+              }]
+            }
+            """);
+        WhatsappWebhookProcessor.ExtractPhoneNumberId(doc.RootElement)
+            .Should().Be("e2e-city-hospital-surat");
+    }
+
+    [Fact]
+    public void ExtractPhoneNumberId_returns_null_when_missing()
+    {
+        using var doc = JsonDocument.Parse("""{"event":"message_received","from":"+919100000001"}""");
+        WhatsappWebhookProcessor.ExtractPhoneNumberId(doc.RootElement).Should().BeNull();
+    }
+}
 
 public class WhatsappWebhookProcessorTests
 {

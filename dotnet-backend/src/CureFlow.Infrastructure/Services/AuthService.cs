@@ -5,6 +5,7 @@ using CureFlow.Domain.Entities;
 using CureFlow.Domain.Entities.Saas;
 using CureFlow.Domain.Enums;
 using CureFlow.Infrastructure.Identity;
+using CureFlow.Infrastructure.Persistence.Seeders;
 using Microsoft.Extensions.Logging;
 
 namespace CureFlow.Infrastructure.Services;
@@ -43,13 +44,23 @@ public class AuthService : IAuthService
         var tenant = await _db.QueryFirstOrDefaultAsync<Tenant>(
             """
             SELECT * FROM "Tenants"
-            WHERE "Id" = @Id AND "IsActive" = true AND "IsDeleted" = false
+            WHERE "Id" = @Id AND "IsDeleted" = false
             LIMIT 1
             """,
             new { Id = user.TenantId },
             ignoreTenant: true,
             ct);
-        if (tenant == null) throw new DomainException("Hospital account inactive", 403);
+        if (tenant == null) throw new DomainException("Hospital account not found", 403);
+
+        if (tenant.LifecycleStatus == TenantLifecycleStatus.Rejected)
+            throw new DomainException(
+                string.IsNullOrWhiteSpace(tenant.RejectionReason)
+                    ? "Your hospital registration was not approved."
+                    : $"Your hospital registration was not approved: {tenant.RejectionReason}",
+                403);
+
+        if (tenant.LifecycleStatus == TenantLifecycleStatus.Suspended || !tenant.IsActive)
+            throw new DomainException("Hospital account suspended. Contact CureFlow support.", 403);
 
         user.LastLoginAt = DateTime.UtcNow;
         await _permissions.AssignLegacyRoleAsync(user, ct);
@@ -57,25 +68,13 @@ public class AuthService : IAuthService
 
         var permissionCodes = await _permissions.GetPermissionCodesAsync(user, ct);
         var token = _jwt.Issue(user.Id, user.TenantId, user.Email, user.Role.ToString(), permissionCodes);
-        return new AuthResponse(
-            token,
-            new UserDto(
-                user.Id, user.Name, user.Email, user.Role, user.IsActive, user.Specialty, user.Phone,
-                permissionCodes),
-            new TenantDto(tenant.Id, tenant.Slug, tenant.Name, tenant.Plan, tenant.SubscriptionStatus));
+        return new AuthResponse(token, MapUser(user, permissionCodes), TenantMapping.ToDto(tenant));
     }
 
     public async Task<TenantDto> RegisterTenantAsync(RegisterTenantRequest req, CancellationToken ct = default)
     {
-        var slug = Slugify(req.HospitalName);
+        var slug = await ResolveUniqueSlugAsync(req.HospitalName, ct);
         var email = req.AdminEmail.ToLower();
-
-        if (await _db.QueryFirstOrDefaultAsync<int?>(
-                """SELECT 1 FROM "Tenants" WHERE "Slug" = @Slug AND "IsDeleted" = false LIMIT 1""",
-                new { Slug = slug },
-                ignoreTenant: true,
-                ct) != null)
-            throw new ValidationException("Hospital with this name already exists. Pick a different name.");
 
         if (await _db.QueryFirstOrDefaultAsync<int?>(
                 """SELECT 1 FROM "Users" WHERE "Email" = @Email AND "IsDeleted" = false LIMIT 1""",
@@ -94,6 +93,9 @@ public class AuthService : IAuthService
             Plan = SubscriptionPlan.Trial,
             SubscriptionStatus = SubscriptionStatus.Trialing,
             TrialEndsAt = DateTime.UtcNow.AddDays(14),
+            LifecycleStatus = TenantLifecycleStatus.PendingApproval,
+            OnboardingComplete = false,
+            IsActive = true,
         };
 
         var admin = new User
@@ -111,11 +113,13 @@ public class AuthService : IAuthService
             admin.TenantId = tenant.Id;
             await session.InsertAsync(admin, ignoreTenant: true, ct);
             await session.InsertAsync(new HospitalProfile { TenantId = tenant.Id, Name = req.HospitalName }, ignoreTenant: true, ct);
+            await session.InsertAsync(new TenantOnboardingState { TenantId = tenant.Id }, ignoreTenant: true, ct);
         }, ct);
 
         await _permissions.AssignLegacyRoleAsync(admin, ct);
-        _logger.LogInformation("Registered tenant {slug}", tenant.Slug);
-        return new TenantDto(tenant.Id, tenant.Slug, tenant.Name, tenant.Plan, tenant.SubscriptionStatus);
+        await TemplatePlaceholderSeeder.SeedForTenantAsync(_db, tenant, ct);
+        _logger.LogInformation("Registered tenant {slug} pending approval", tenant.Slug);
+        return TenantMapping.ToDto(tenant);
     }
 
     public async Task<UserDto> CreateUserAsync(CreateUserRequest req, CancellationToken ct = default)
@@ -145,9 +149,7 @@ public class AuthService : IAuthService
         await _permissions.AssignLegacyRoleAsync(user, ct);
         await _audit.LogAsync("user.create", "user", user.Id.ToString(), new { req.Email, req.Role }, ct);
         var permissionCodes = await _permissions.GetPermissionCodesAsync(user, ct);
-        return new UserDto(
-            user.Id, user.Name, user.Email, user.Role, user.IsActive, user.Specialty, user.Phone,
-            permissionCodes);
+        return MapUser(user, permissionCodes);
     }
 
     public async Task<UserDto> GetMeAsync(CancellationToken ct = default)
@@ -155,11 +157,52 @@ public class AuthService : IAuthService
         var user = await _db.GetByIdAsync<User>(_tenant.UserId!.Value, ct: ct)
             ?? throw new NotFoundException("User");
         var permissionCodes = await _permissions.GetPermissionCodesAsync(user, ct);
-        return new UserDto(
-            user.Id, user.Name, user.Email, user.Role, user.IsActive, user.Specialty, user.Phone,
-            permissionCodes);
+        return MapUser(user, permissionCodes);
     }
 
-    private static string Slugify(string name) =>
-        System.Text.RegularExpressions.Regex.Replace(name.ToLowerInvariant().Trim(), @"[^a-z0-9]+", "-").Trim('-');
+    public async Task<SessionDto> GetSessionAsync(CancellationToken ct = default)
+    {
+        var user = await _db.GetByIdAsync<User>(_tenant.UserId!.Value, ct: ct)
+            ?? throw new NotFoundException("User");
+        var tenant = await _db.QueryFirstOrDefaultAsync<Tenant>(
+            """
+            SELECT * FROM "Tenants"
+            WHERE "Id" = @Id AND "IsDeleted" = false
+            LIMIT 1
+            """,
+            new { Id = user.TenantId },
+            ignoreTenant: true,
+            ct);
+        if (tenant == null) throw new NotFoundException("Tenant");
+
+        var permissionCodes = await _permissions.GetPermissionCodesAsync(user, ct);
+        return new SessionDto(MapUser(user, permissionCodes), TenantMapping.ToDto(tenant));
+    }
+
+    private static UserDto MapUser(User user, IReadOnlyList<string> permissionCodes) =>
+        new(user.Id, user.Name, user.Email, user.Role, user.IsActive, user.Specialty, user.Phone, permissionCodes);
+
+    private async Task<string> ResolveUniqueSlugAsync(string hospitalName, CancellationToken ct)
+    {
+        var baseSlug = TenantSlugHelper.Slugify(hospitalName);
+        if (string.IsNullOrWhiteSpace(baseSlug))
+            throw new ValidationException("Hospital name must contain at least one letter or number.");
+
+        if (TenantSlugHelper.IsReserved(baseSlug))
+            throw new ValidationException($"Hospital name produces a reserved slug '{baseSlug}'. Pick a different name.");
+
+        for (var attempt = 1; attempt < 100; attempt++)
+        {
+            var candidate = TenantSlugHelper.WithSuffix(baseSlug, attempt);
+            var taken = await _db.QueryFirstOrDefaultAsync<int?>(
+                """SELECT 1 FROM "Tenants" WHERE "Slug" = @Slug AND "IsDeleted" = false LIMIT 1""",
+                new { Slug = candidate },
+                ignoreTenant: true,
+                ct);
+            if (taken == null)
+                return candidate;
+        }
+
+        throw new ValidationException("Could not generate a unique hospital slug. Try a different name.");
+    }
 }

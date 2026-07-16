@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 const WIDTH = {
   sm: "w-full lg:w-[10.5rem]",
   md: "w-[14rem]",
+  collapsed: "w-[4.75rem]",
 };
 
 const VISIBILITY = {
@@ -21,6 +22,7 @@ const SidePanel = ({
   className,
   size = "md",
   visible = "md",
+  collapsed = false,
   testId,
   as = "aside",
 }) => {
@@ -28,9 +30,10 @@ const SidePanel = ({
   return (
     <Tag
       data-testid={testId}
+      data-collapsed={collapsed ? "true" : "false"}
       className={cn(
         VISIBILITY[visible] ?? VISIBILITY.md,
-        WIDTH[size] ?? WIDTH.md,
+        collapsed ? WIDTH.collapsed : (WIDTH[size] ?? WIDTH.md),
         "shrink-0 flex-col glass-sidebar h-full min-h-0 overflow-hidden",
         className,
       )}

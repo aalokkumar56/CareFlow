@@ -1,7 +1,5 @@
 "use client";
 
-import Login from "@/views/Login";
+import { createClientRoute } from "@/components/createClientRoute";
 
-export default function LoginPage() {
-  return <Login />;
-}
+export default createClientRoute(() => import("./page.client"));

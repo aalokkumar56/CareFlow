@@ -61,6 +61,7 @@ public class WhatsappDemoController : ControllerBase
         var payload = JsonSerializer.Serialize(new
         {
             @event = "message_received",
+            phone_number_id = request.PhoneNumberId,
             from = $"+{phone}",
             message_id = $"demo-{Guid.NewGuid():N}",
             type = "text",
@@ -171,7 +172,7 @@ public class WhatsappDemoController : ControllerBase
         return doc.RootElement.Clone();
     }
 
-    public sealed record DemoInboundRequest(string Message, string? Phone = null);
+    public sealed record DemoInboundRequest(string Message, string? Phone = null, string? PhoneNumberId = null);
 
     public sealed record RegisterPhoneRequest(
         string? PhoneNumberId,

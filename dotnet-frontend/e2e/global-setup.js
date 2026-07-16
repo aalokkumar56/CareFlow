@@ -5,6 +5,23 @@ const apiURL = process.env.PLAYWRIGHT_API_URL || "http://localhost:5180";
 const DEPT_CACHE_PATH = path.join(__dirname, "helpers/.e2e-departments.json");
 const DEPT_FALLBACK = ["Cardiology", "Orthopedics"];
 
+async function seedMultiHospitalsIfNeeded(apiUp) {
+  if (!apiUp) return;
+  try {
+    const res = await fetch(`${apiURL}/api/dev/seed-multi-hospitals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (res.ok) {
+      console.log("[E2E] Multi-hospital seed confirmed via /api/dev/seed-multi-hospitals");
+    } else {
+      console.warn(`[E2E] seed-multi-hospitals returned ${res.status}`);
+    }
+  } catch (err) {
+    console.warn(`[E2E] Could not seed multi-hospitals: ${err.message}`);
+  }
+}
+
 async function cacheDepartmentFilters(apiUp) {
   if (!apiUp) {
     fs.writeFileSync(DEPT_CACHE_PATH, JSON.stringify(DEPT_FALLBACK));
@@ -12,7 +29,9 @@ async function cacheDepartmentFilters(apiUp) {
   }
   try {
     const { apiLogin, getDepartments } = require("./helpers/api");
-    const { accessToken } = await apiLogin("admin@cureflow.in", "admin123");
+    const { HOSPITAL_A } = require("./helpers/multi-hospital");
+    // Use multi-hospital admin instead of demo admin to avoid extra login pressure.
+    const { accessToken } = await apiLogin(HOSPITAL_A.adminEmail, HOSPITAL_A.password);
     const depts = await getDepartments(accessToken);
     const list = Array.isArray(depts) && depts.length ? depts : DEPT_FALLBACK;
     fs.mkdirSync(path.dirname(DEPT_CACHE_PATH), { recursive: true });
@@ -55,6 +74,7 @@ async function globalSetup() {
     feUp = false;
   }
 
+  await seedMultiHospitalsIfNeeded(apiUp);
   await cacheDepartmentFilters(apiUp);
 
   if (!apiUp || !feUp) {
