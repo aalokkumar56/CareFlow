@@ -1,1 +1,3 @@
 # Ignore rules are defined in the repository root .gitignore.
+.vercel
+.env*

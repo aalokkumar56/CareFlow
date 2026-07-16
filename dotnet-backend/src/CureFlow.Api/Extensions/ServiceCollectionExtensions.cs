@@ -69,9 +69,14 @@ public static class ServiceCollectionExtensions
             });
         });
 
+        var corsOrigins = (config["Cors:Origins"] ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
         services.AddCors(o => o.AddDefaultPolicy(p =>
-            p.WithOrigins(config["Cors:Origins"]?.Split(',') ?? new[] { "*" })
-             .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+            p.SetIsOriginAllowed(origin => IsAllowedCorsOrigin(origin, corsOrigins))
+             .AllowAnyHeader()
+             .AllowAnyMethod()
+             .AllowCredentials()));
 
         services.AddResponseCompression(options =>
         {
@@ -258,5 +263,30 @@ public static class ServiceCollectionExtensions
         app.MapControllers();
 
         return app;
+    }
+
+    /// <summary>
+    /// Allow explicit Cors:Origins plus local dev and Vercel preview/production hosts.
+    /// </summary>
+    private static bool IsAllowedCorsOrigin(string? origin, string[] configuredOrigins)
+    {
+        if (string.IsNullOrWhiteSpace(origin))
+            return false;
+
+        if (configuredOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+            return true;
+
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+            return false;
+
+        var host = uri.Host;
+        if (host is "localhost" or "127.0.0.1")
+            return true;
+
+        // Frontend ships on Vercel (production + per-deploy previews).
+        if (host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 }
