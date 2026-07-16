@@ -15,6 +15,8 @@ public static class DemoSeeder
 {
     public const string DefaultAdminEmail = "admin@cureflow.in";
     public const string DefaultAdminPassword = "admin123";
+    public const string DefaultDoctorEmail = "doctor@cureflow.in";
+    public const string DefaultColleagueDoctorEmail = "dr.colleague@cureflow.in";
 
     public static async Task SeedAsync(ICureFlowDbSession db, IPasswordHasher hasher, CancellationToken ct = default)
     {
@@ -109,6 +111,155 @@ public static class DemoSeeder
                 WorkingHours = "OPD: 9am-8pm · Emergency: 24x7",
                 Emergency24x7 = true,
                 DepartmentsJson = """["General Medicine","Cardiology","Orthopedics","Pediatrics"]""",
+            }, ignoreTenant: true, ct: ct);
+        }
+
+        var doctor = await EnsureDoctorUserAsync(db, hasher, tenant.Id, DefaultDoctorEmail, "Dr. Demo Sharma", ct);
+        var colleague = await EnsureDoctorUserAsync(db, hasher, tenant.Id, DefaultColleagueDoctorEmail, "Dr. Priya Verma", ct);
+        var demoPatient = await EnsureDemoPatientAsync(db, tenant.Id, "Ravi Kumar", "9876500101", ct);
+        await EnsureTodayAppointmentsAsync(db, tenant.Id, demoPatient, doctor, colleague, ct);
+    }
+
+    private static async Task<User> EnsureDoctorUserAsync(
+        ICureFlowDbSession db,
+        IPasswordHasher hasher,
+        Guid tenantId,
+        string email,
+        string name,
+        CancellationToken ct)
+    {
+        var doctor = await db.QueryFirstOrDefaultAsync<User>(
+            """
+            SELECT * FROM "Users"
+            WHERE "TenantId" = @tenantId AND LOWER("Email") = @email AND "IsDeleted" = false
+            """,
+            new { tenantId, email = email.ToLower() },
+            ignoreTenant: true,
+            ct: ct);
+
+        if (doctor == null)
+        {
+            doctor = new User
+            {
+                TenantId = tenantId,
+                Name = name,
+                Email = email,
+                Role = UserRole.Doctor,
+                PasswordHash = hasher.Hash(DefaultAdminPassword),
+                Specialty = "General Medicine",
+            };
+            await db.InsertAsync(doctor, ignoreTenant: true, ct: ct);
+        }
+
+        await EnsureUserRoleAssignmentAsync(db, doctor, ct);
+
+        var hasProfile = await db.QueryFirstOrDefaultAsync<int>(
+            """
+            SELECT 1 FROM "StaffProfiles"
+            WHERE "TenantId" = @tenantId AND "UserId" = @userId AND "IsDeleted" = false
+            LIMIT 1
+            """,
+            new { tenantId, userId = doctor.Id },
+            ignoreTenant: true,
+            ct: ct) == 1;
+
+        if (!hasProfile)
+        {
+            await db.InsertAsync(new StaffProfile
+            {
+                TenantId = tenantId,
+                UserId = doctor.Id,
+                Department = "General Medicine",
+                EmploymentType = StaffEmploymentType.Permanent,
+                IsAvailable = true,
+                ConsultationFee = 500,
+            }, ignoreTenant: true, ct: ct);
+        }
+
+        return doctor;
+    }
+
+    private static async Task<Patient> EnsureDemoPatientAsync(
+        ICureFlowDbSession db,
+        Guid tenantId,
+        string name,
+        string phone,
+        CancellationToken ct)
+    {
+        var patient = await db.QueryFirstOrDefaultAsync<Patient>(
+            """
+            SELECT * FROM "Patients"
+            WHERE "TenantId" = @tenantId AND "Phone" = @phone AND "IsDeleted" = false
+            LIMIT 1
+            """,
+            new { tenantId, phone },
+            ignoreTenant: true,
+            ct: ct);
+
+        if (patient != null)
+            return patient;
+
+        patient = new Patient
+        {
+            TenantId = tenantId,
+            Name = name,
+            Phone = phone,
+            Department = "General Medicine",
+            Status = LeadStatus.AppointmentScheduled,
+        };
+        await db.InsertAsync(patient, ignoreTenant: true, ct: ct);
+        return patient;
+    }
+
+    private static async Task EnsureTodayAppointmentsAsync(
+        ICureFlowDbSession db,
+        Guid tenantId,
+        Patient patient,
+        User primaryDoctor,
+        User colleagueDoctor,
+        CancellationToken ct)
+    {
+        var today = DateTime.UtcNow.Date;
+        var slots = new[]
+        {
+            (today.AddHours(10), primaryDoctor, AppointmentStatus.Scheduled, "Follow-up consultation"),
+            (today.AddHours(11).AddMinutes(30), primaryDoctor, AppointmentStatus.Confirmed, "Blood pressure review"),
+            (today.AddHours(14), colleagueDoctor, AppointmentStatus.Scheduled, "General check-up"),
+        };
+
+        foreach (var (scheduledAt, doctor, status, notes) in slots)
+        {
+            var exists = await db.QueryFirstOrDefaultAsync<int>(
+                """
+                SELECT 1 FROM "Appointments"
+                WHERE "TenantId" = @tenantId
+                  AND "PatientId" = @patientId
+                  AND "DoctorUserId" = @doctorUserId
+                  AND "ScheduledAt" = @scheduledAt
+                  AND "IsDeleted" = false
+                LIMIT 1
+                """,
+                new { tenantId, patientId = patient.Id, doctorUserId = doctor.Id, scheduledAt },
+                ignoreTenant: true,
+                ct: ct) == 1;
+
+            if (exists)
+                continue;
+
+            await db.InsertAsync(new Appointment
+            {
+                TenantId = tenantId,
+                PatientId = patient.Id,
+                PatientName = patient.Name,
+                PatientPhone = patient.Phone,
+                DoctorUserId = doctor.Id,
+                DoctorName = doctor.Name,
+                Department = "General Medicine",
+                ScheduledAt = scheduledAt,
+                Status = status,
+                Notes = notes,
+                ChiefComplaint = notes,
+                ConsultationFee = 500,
             }, ignoreTenant: true, ct: ct);
         }
     }

@@ -15,6 +15,17 @@ public class DashboardController : ControllerBase
     [Authorize(Policy = "Permission:Dashboard.View")]
     public async Task<IActionResult> Overview(CancellationToken ct) => Ok(await _svc.GetOverviewAsync(ct));
 
+    [HttpGet("clinical-overview")]
+    [Authorize(Policy = "Permission:Dashboard.View")]
+    [Authorize(Policy = "Permission:Appointment.View")]
+    [Authorize(Policy = "Permission:Clinical.View")]
+    public async Task<IActionResult> ClinicalOverview(
+        [FromQuery] DateTime? date,
+        [FromQuery] string? scope,
+        [FromQuery(Name = "doctor_user_id")] Guid? doctorUserId,
+        CancellationToken ct) =>
+        Ok(await _svc.GetClinicalOverviewAsync(date, scope, doctorUserId, ct));
+
     [HttpGet("missed-revenue")]
     [Authorize(Policy = "Permission:Dashboard.View")]
     public async Task<IActionResult> Missed(CancellationToken ct) => Ok(await _svc.GetMissedRevenueAsync(ct));

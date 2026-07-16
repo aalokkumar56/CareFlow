@@ -52,10 +52,11 @@ public class AppointmentsController : ControllerBase
         [FromQuery] string? status,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
+        [FromQuery(Name = "doctor_user_id")] Guid? doctorUserId,
         [FromQuery] int page = 1,
         [FromQuery] int page_size = Pagination.DefaultPageSize,
         CancellationToken ct = default) =>
-        Ok(await _svc.ListAsync(status, from, to, page, page_size, ct));
+        Ok(await _svc.ListAsync(status, from, to, doctorUserId, page, page_size, ct));
 
     [HttpGet("{id:guid}")]
     [Authorize(Policy = "Permission:Appointment.View")]

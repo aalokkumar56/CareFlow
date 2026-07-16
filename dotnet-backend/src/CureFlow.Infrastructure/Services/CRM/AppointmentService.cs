@@ -99,7 +99,7 @@ public class AppointmentService : IAppointmentService
         return Map(a);
     }
 
-    public async Task<PagedResult<AppointmentDto>> ListAsync(string? status, DateTime? from, DateTime? to, int page, int pageSize, CancellationToken ct = default)
+    public async Task<PagedResult<AppointmentDto>> ListAsync(string? status, DateTime? from, DateTime? to, Guid? doctorUserId, int page, int pageSize, CancellationToken ct = default)
     {
         var (normalizedPage, normalizedPageSize, skip) = Pagination.Normalize(page, pageSize);
         var where = SqlFragments.WhereActive<Appointment>(ignoreTenant: false);
@@ -120,6 +120,11 @@ public class AppointmentService : IAppointmentService
         {
             filters.Add(@"""ScheduledAt"" <= @to");
             param["to"] = to.Value;
+        }
+        if (doctorUserId.HasValue)
+        {
+            filters.Add(@"""DoctorUserId"" = @doctorUserId");
+            param["doctorUserId"] = doctorUserId.Value;
         }
 
         var extra = filters.Count > 0 ? " AND " + string.Join(" AND ", filters) : "";

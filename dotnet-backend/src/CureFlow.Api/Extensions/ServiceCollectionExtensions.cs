@@ -117,11 +117,12 @@ public static class ServiceCollectionExtensions
     {
         DapperSetup.Configure();
 
-        services.AddDbContext<ApplicationDbContext>(opt =>
-            opt.UseNpgsql(config.GetConnectionString("Default")));
+        var connectionString = CureFlowNpgsqlDataSource.Normalize(
+            config.GetConnectionString("Default")
+            ?? throw new InvalidOperationException("Connection string 'Default' is required."));
 
-        var connectionString = config.GetConnectionString("Default")
-            ?? throw new InvalidOperationException("Connection string 'Default' is required.");
+        services.AddDbContext<ApplicationDbContext>(opt =>
+            opt.UseNpgsql(connectionString));
         services.AddSingleton(_ => CureFlowNpgsqlDataSource.Create(connectionString));
         services.AddScoped<ICureFlowDbSession, CureFlowDbSession>();
 

@@ -31,7 +31,8 @@ import DoctorSelect from "@/components/forms/DoctorSelect";
 import DepartmentSelect from "@/components/forms/DepartmentSelect";
 import useDepartments from "@/hooks/useDepartments";
 import usePermissions from "@/hooks/usePermissions";
-import { PERMISSIONS } from "@/lib/permissions";
+import { useAuth } from "@/lib/auth";
+import { normalizeRole, PERMISSIONS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 const APPOINTMENT_STATUS_LABELS = {
@@ -123,10 +124,13 @@ const apptToEditForm = (a) => {
 
 const Appointments = () => {
   const [params] = useSearchParams();
+  const { user } = useAuth();
+  const isDoctor = normalizeRole(user?.role) === "doctor";
   const { can } = usePermissions();
   const canCreateAppointment = can(PERMISSIONS.AppointmentCreate);
   const { departments } = useDepartments();
-  const dateFilter = params.get("date");
+  const dateFilter = params.get("date") || (isDoctor ? "today" : null);
+  const [doctorFilter, setDoctorFilter] = useState(isDoctor ? "mine" : "all");
   const [rows, setRows] = useState([]);
   const [patients, setPatients] = useState([]);
   const [bookingOptions, setBookingOptions] = useState({ doctors: [] });
@@ -154,13 +158,14 @@ const Appointments = () => {
       page_size: 100,
       from: rangeFrom,
       to: rangeTo,
+      ...(doctorFilter === "mine" && user?.id ? { doctor_user_id: user.id } : {}),
     });
     api.get(`/appointments?${qs}`).then((r) => {
       setRows(unwrapPaged(r).items);
     });
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [dateFilter, weekStart]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [dateFilter, weekStart, doctorFilter, user?.id]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -192,10 +197,13 @@ const Appointments = () => {
     });
   }, [rows, search, patients]);
 
-  const visibleRows = useMemo(() => filteredRows.filter((a) => {
-    const d = new Date(a.scheduled_at);
-    return d >= weekStart && d <= addDays(weekStart, 7);
-  }), [filteredRows, weekStart]);
+  const visibleRows = useMemo(() => {
+    if (dateFilter === "today") return filteredRows;
+    return filteredRows.filter((a) => {
+      const d = new Date(a.scheduled_at);
+      return d >= weekStart && d <= addDays(weekStart, 7);
+    });
+  }, [filteredRows, weekStart, dateFilter]);
 
   const create = async () => {
     if (!form.patient_id || !form.doctor_user_id || !form.department || !form.date) {
@@ -373,6 +381,32 @@ const Appointments = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {isDoctor && (
+              <div className="flex rounded-xl border border-white/50 bg-white/30 p-1" data-testid="appt-doctor-filter">
+                <button
+                  type="button"
+                  data-testid="appt-filter-mine"
+                  onClick={() => setDoctorFilter("mine")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors",
+                    doctorFilter === "mine" ? "bg-[#064E3B] text-white" : "text-[#4B5563] hover:bg-white/50",
+                  )}
+                >
+                  My appointments
+                </button>
+                <button
+                  type="button"
+                  data-testid="appt-filter-all"
+                  onClick={() => setDoctorFilter("all")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors",
+                    doctorFilter === "all" ? "bg-[#064E3B] text-white" : "text-[#4B5563] hover:bg-white/50",
+                  )}
+                >
+                  All doctors
+                </button>
+              </div>
+            )}
             {newApptDialog}
           </div>
         </div>
