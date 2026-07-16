@@ -21,13 +21,10 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: "Host=postgres;Port=5432;Database=cureflow;Username=postgres;Password=postgres;GSS Encryption Mode=Disable"
-      Jwt__Secret: "${JWT_SECRET:-replace-with-64-char-random-secret}"
+      Jwt__Secret: "${JWT_SECRET:-replace-with-64-char-random-secret-for-local-docker}"
       Anthropic__ApiKey: "${ANTHROPIC_API_KEY}"
-      WhatsApp__PhoneNumberId: "${WA_PHONE_NUMBER_ID}"
-      WhatsApp__AccessToken: "${WA_ACCESS_TOKEN}"
-      WhatsApp__AppSecret: "${WA_APP_SECRET}"
-      WhatsApp__VerifyToken: "${WA_VERIFY_TOKEN:-cureflow-webhook-verify-2026}"
-      WhatsApp__Enabled: "${WA_ENABLED:-false}"
+      # WhatsApp credentials are configured per-tenant at runtime (Settings → Integrations).
+      Database__Seed: "true"
     ports:
       - "5180:8080"
 

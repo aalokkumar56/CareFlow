@@ -57,9 +57,6 @@ export const fetchAuthMe = () => {
 export const fetchAuthSession = (source = "unknown") => {
   const token = readStorage("cureflow_token");
   if (!token) return Promise.reject(new Error("No token"));
-  // #region agent log
-  fetch('http://127.0.0.1:7396/ingest/71a493aa-be86-4272-b3f4-088f0dfe3f3f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a6e1ca'},body:JSON.stringify({sessionId:'a6e1ca',location:'auth.jsx:fetchAuthSession',message:'session_fetch',data:{source,inflight:!!authSessionInflight},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-  // #endregion
   if (!authSessionInflight) {
     authSessionInflight = api.get("/auth/session").finally(() => {
       authSessionInflight = null;

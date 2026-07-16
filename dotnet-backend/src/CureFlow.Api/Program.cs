@@ -55,8 +55,15 @@ await using (var scope = app.Services.CreateAsyncScope())
     }
     else if (builder.Configuration.GetValue("Database:SeedPlatformUsers", defaultValue: false))
     {
-        // Optional: create platform ops user without demo hospital data.
-        await PlatformUserSeeder.SeedAsync(session, hasher);
+        if (app.Environment.IsProduction())
+        {
+            logger.LogWarning(
+                "Database:SeedPlatformUsers is ignored in Production. Create platform users via a secure ops process.");
+        }
+        else
+        {
+            await PlatformUserSeeder.SeedAsync(session, hasher);
+        }
     }
 }
 

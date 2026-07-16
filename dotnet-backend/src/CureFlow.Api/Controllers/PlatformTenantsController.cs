@@ -2,7 +2,6 @@ using CureFlow.Application.DTOs;
 using CureFlow.Application.Interfaces;
 using CureFlow.Domain.Entities.Saas;
 using CureFlow.Domain.Enums;
-using CureFlow.Infrastructure.Persistence.Seeders;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -12,24 +11,16 @@ namespace CureFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/platform/tenants")]
+[Authorize(Policy = "PlatformUser")]
 public class PlatformTenantsController : ControllerBase
 {
     private readonly ICureFlowDbSession _db;
-    private readonly IWebHostEnvironment _env;
 
-    public PlatformTenantsController(ICureFlowDbSession db, IWebHostEnvironment env)
-    {
-        _db = db;
-        _env = env;
-    }
+    public PlatformTenantsController(ICureFlowDbSession db) => _db = db;
 
     [HttpGet]
-    [AllowAnonymous]
     public async Task<IActionResult> List([FromQuery] string? status, CancellationToken ct)
     {
-        if (!CanAccessPlatformOps())
-            return NotFound();
-
         var sql = """
             SELECT * FROM "Tenants"
             WHERE "IsDeleted" = false
@@ -48,12 +39,8 @@ public class PlatformTenantsController : ControllerBase
     }
 
     [HttpPatch("{id:guid}/approve")]
-    [AllowAnonymous]
     public async Task<IActionResult> Approve(Guid id, CancellationToken ct)
     {
-        if (!CanAccessPlatformOps())
-            return NotFound();
-
         var platformUserId = GetPlatformUserId();
         var updated = await _db.ExecuteAsync(
             """
@@ -85,12 +72,8 @@ public class PlatformTenantsController : ControllerBase
     }
 
     [HttpPatch("{id:guid}/reject")]
-    [AllowAnonymous]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectTenantRequest? body, CancellationToken ct)
     {
-        if (!CanAccessPlatformOps())
-            return NotFound();
-
         var platformUserId = GetPlatformUserId();
         var reason = body?.Reason?.Trim();
         var updated = await _db.ExecuteAsync(
@@ -121,12 +104,8 @@ public class PlatformTenantsController : ControllerBase
     }
 
     [HttpPatch("{id:guid}/suspend")]
-    [AllowAnonymous]
     public async Task<IActionResult> Suspend(Guid id, CancellationToken ct)
     {
-        if (!CanAccessPlatformOps())
-            return NotFound();
-
         var platformUserId = GetPlatformUserId();
         var updated = await _db.ExecuteAsync(
             """
@@ -148,12 +127,8 @@ public class PlatformTenantsController : ControllerBase
     }
 
     [HttpPatch("{id:guid}/activate")]
-    [AllowAnonymous]
     public async Task<IActionResult> Activate(Guid id, CancellationToken ct)
     {
-        if (!CanAccessPlatformOps())
-            return NotFound();
-
         var platformUserId = GetPlatformUserId();
         var updated = await _db.ExecuteAsync(
             """
@@ -173,22 +148,6 @@ public class PlatformTenantsController : ControllerBase
         await LogPlatformActionAsync(platformUserId, id, "tenant.activate", null, ct);
         return Ok(new { id, lifecycle_status = TenantLifecycleStatus.Active.ToString() });
     }
-
-    [HttpPost("seed-multi-hospitals")]
-    [AllowAnonymous]
-    public async Task<IActionResult> SeedMultiHospitals(
-        [FromServices] IPasswordHasher hasher,
-        CancellationToken ct)
-    {
-        if (!CanAccessPlatformOps())
-            return NotFound();
-
-        await MultiHospitalE2eSeeder.SeedAsync(_db, hasher, ct);
-        return Ok(new { ok = true });
-    }
-
-    private bool CanAccessPlatformOps() =>
-        _env.IsDevelopment() || User.HasClaim("platform_user", "true");
 
     private Guid? GetPlatformUserId()
     {
