@@ -27,6 +27,3 @@ export const platformLogout = () => {
 
 export const isPlatformAuthenticated = () =>
   typeof window !== "undefined" && !!localStorage.getItem("cureflow_platform_token");
-
-export const PLATFORM_OPS_EMAIL = "ops@cureflow.in";
-export const PLATFORM_OPS_PASSWORD = "OpsAdmin123!";

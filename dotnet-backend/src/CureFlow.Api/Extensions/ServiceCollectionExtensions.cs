@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Microsoft.OpenApi.Models;
@@ -174,6 +175,15 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCureFlowAuthentication(this IServiceCollection services, IConfiguration config)
     {
         var jwtSecret = config["Jwt:Secret"] ?? throw new InvalidOperationException("Jwt:Secret required");
+        var environment = config["ASPNETCORE_ENVIRONMENT"] ?? Environments.Production;
+        var isProduction = string.Equals(environment, Environments.Production, StringComparison.OrdinalIgnoreCase);
+        if (isProduction
+            && (jwtSecret.Contains("REPLACE-WITH", StringComparison.OrdinalIgnoreCase)
+                || jwtSecret.Length < 32))
+        {
+            throw new InvalidOperationException(
+                "Jwt:Secret must be a real secret in Production (min 32 chars). Set Jwt__Secret in the environment.");
+        }
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(opt =>

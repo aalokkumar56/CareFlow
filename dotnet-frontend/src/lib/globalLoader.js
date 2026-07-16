@@ -48,11 +48,6 @@ export const getGlobalLoaderPendingCount = () => pendingCount;
 
 export const incrementGlobalLoader = () => {
   pendingCount += 1;
-  // #region agent log
-  if (pendingCount >= 4) {
-    fetch('http://127.0.0.1:7396/ingest/71a493aa-be86-4272-b3f4-088f0dfe3f3f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a6e1ca'},body:JSON.stringify({sessionId:'a6e1ca',location:'globalLoader.js:increment',message:'loader_pending_high',data:{pendingCount,visible},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-  }
-  // #endregion
   updateVisibility();
 };
 

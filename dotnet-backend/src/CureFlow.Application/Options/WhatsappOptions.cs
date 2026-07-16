@@ -33,7 +33,7 @@ public class WhatsappOptions
     public string? RelayWebhookUrl { get; set; }
 
     /// <summary>When false, relay forwarding is skipped even if RelayWebhookUrl is set.</summary>
-    public bool RelayWebhookEnabled { get; set; } = true;
+    public bool RelayWebhookEnabled { get; set; }
 
     /// <summary>Number of delivery attempts (includes the first try).</summary>
     public int RelayWebhookRetryCount { get; set; } = 3;
