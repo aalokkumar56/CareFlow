@@ -144,13 +144,19 @@ public class DashboardService : IDashboardService
 
     private async Task<object> BuildOverviewAsync(CancellationToken ct)
     {
-        var todayStart = DateTime.UtcNow.Date;
-        var yesterdayStart = todayStart.AddDays(-1);
-        var weekAgo = todayStart.AddDays(-6);
-        var monthStart = new DateTime(todayStart.Year, todayStart.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var timeZoneId = await GetTenantTimezoneAsync(ct);
+        var hospitalNow = TenantTimeHelper.UtcToHospitalLocal(DateTime.UtcNow, timeZoneId);
+        var hospitalToday = hospitalNow.Date;
+        var (todayStart, todayEnd) = TenantTimeHelper.HospitalDayRangeUtc(hospitalToday, timeZoneId);
+        var (yesterdayStart, _) = TenantTimeHelper.HospitalDayRangeUtc(hospitalToday.AddDays(-1), timeZoneId);
+        var weekAgo = TenantTimeHelper.HospitalLocalToUtc(hospitalToday.AddDays(-6), timeZoneId);
+        var hospitalMonthStart = new DateTime(hospitalNow.Year, hospitalNow.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
+        var monthStart = TenantTimeHelper.HospitalLocalToUtc(hospitalMonthStart, timeZoneId);
+        var prevMonthStart = TenantTimeHelper.HospitalLocalToUtc(hospitalMonthStart.AddMonths(-1), timeZoneId);
         var fifteenMinAgo = DateTime.UtcNow.AddMinutes(-15);
-        var todayEnd = todayStart.AddDays(1);
-        var weekEnd = todayStart.AddDays(1);
+        var weekEnd = todayEnd;
+        var lastWeekStart = TenantTimeHelper.HospitalLocalToUtc(hospitalToday.AddDays(-13), timeZoneId);
+        var lastWeekEnd = TenantTimeHelper.HospitalLocalToUtc(hospitalToday.AddDays(-6), timeZoneId);
 
         var patientWhere = SqlFragments.WhereActive<Patient>(ignoreTenant: false);
         var apptWhere = SqlFragments.WhereActive<Appointment>(ignoreTenant: false);
@@ -209,7 +215,6 @@ public class DashboardService : IDashboardService
             new { monthStart }, ct: ct);
         var revenueMtd = revenueMtdAppointments + revenueMtdReferrals;
 
-        var prevMonthStart = monthStart.AddMonths(-1);
         var revenuePrevMonthAppts = await _db.QuerySingleAsync<decimal>(
             $"""
             SELECT COALESCE(SUM("ConsultationFee"), 0) FROM "Appointments"
@@ -249,28 +254,26 @@ public class DashboardService : IDashboardService
             """, ct: ct);
         var trendRaw = await _db.QueryAsync<DateCountRow>(
             $"""
-            SELECT "CreatedAt"::date AS "Date", COUNT(*)::int AS "Count" FROM "Patients"
+            SELECT (timezone(@tz, "CreatedAt"))::date AS "Date", COUNT(*)::int AS "Count" FROM "Patients"
             WHERE {patientWhere} AND "CreatedAt" >= @weekAgo
-            GROUP BY "CreatedAt"::date
+            GROUP BY (timezone(@tz, "CreatedAt"))::date
             """,
-            new { weekAgo }, ct: ct);
-
-        var lastWeekStart = todayStart.AddDays(-13);
-        var lastWeekEnd = todayStart.AddDays(-6);
+            new { weekAgo, tz = timeZoneId }, ct: ct);
 
         var apptWeekRaw = await _db.QueryAsync<ApptWeekRow>(
             $"""
-            SELECT "ScheduledAt"::date AS "Date",
+            SELECT (timezone(@tz, "ScheduledAt"))::date AS "Date",
                    COUNT(*) FILTER (WHERE "Status" IN (@scheduled, @confirmed))::int AS "Scheduled",
                    COUNT(*) FILTER (WHERE "Status" = @completed)::int AS "Completed"
             FROM "Appointments"
             WHERE {apptWhere} AND "ScheduledAt" >= @weekAgo AND "ScheduledAt" < @weekEnd
-            GROUP BY "ScheduledAt"::date
+            GROUP BY (timezone(@tz, "ScheduledAt"))::date
             """,
             new
             {
                 weekAgo,
                 weekEnd,
+                tz = timeZoneId,
                 scheduled = (int)AppointmentStatus.Scheduled,
                 confirmed = (int)AppointmentStatus.Confirmed,
                 completed = (int)AppointmentStatus.Completed,
@@ -278,17 +281,18 @@ public class DashboardService : IDashboardService
 
         var apptLastWeekRaw = await _db.QueryAsync<ApptWeekRow>(
             $"""
-            SELECT "ScheduledAt"::date AS "Date",
+            SELECT (timezone(@tz, "ScheduledAt"))::date AS "Date",
                    COUNT(*) FILTER (WHERE "Status" IN (@scheduled, @confirmed))::int AS "Scheduled",
                    COUNT(*) FILTER (WHERE "Status" = @completed)::int AS "Completed"
             FROM "Appointments"
             WHERE {apptWhere} AND "ScheduledAt" >= @lastWeekStart AND "ScheduledAt" < @lastWeekEnd
-            GROUP BY "ScheduledAt"::date
+            GROUP BY (timezone(@tz, "ScheduledAt"))::date
             """,
             new
             {
                 lastWeekStart,
                 lastWeekEnd,
+                tz = timeZoneId,
                 scheduled = (int)AppointmentStatus.Scheduled,
                 confirmed = (int)AppointmentStatus.Confirmed,
                 completed = (int)AppointmentStatus.Completed,
@@ -296,43 +300,43 @@ public class DashboardService : IDashboardService
 
         var revenueWeekRaw = await _db.QueryAsync<DateAmountRow>(
             $"""
-            SELECT "ScheduledAt"::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
+            SELECT (timezone(@tz, "ScheduledAt"))::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
             FROM "Appointments"
             WHERE {apptWhere} AND "Status" = @status
               AND "ScheduledAt" >= @weekAgo AND "ScheduledAt" < @weekEnd
-            GROUP BY "ScheduledAt"::date
+            GROUP BY (timezone(@tz, "ScheduledAt"))::date
             """,
-            new { status = (int)AppointmentStatus.Completed, weekAgo, weekEnd }, ct: ct);
+            new { status = (int)AppointmentStatus.Completed, weekAgo, weekEnd, tz = timeZoneId }, ct: ct);
 
         var revenueLastWeekRaw = await _db.QueryAsync<DateAmountRow>(
             $"""
-            SELECT "ScheduledAt"::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
+            SELECT (timezone(@tz, "ScheduledAt"))::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
             FROM "Appointments"
             WHERE {apptWhere} AND "Status" = @status
               AND "ScheduledAt" >= @lastWeekStart AND "ScheduledAt" < @lastWeekEnd
-            GROUP BY "ScheduledAt"::date
+            GROUP BY (timezone(@tz, "ScheduledAt"))::date
             """,
-            new { status = (int)AppointmentStatus.Completed, lastWeekStart, lastWeekEnd }, ct: ct);
+            new { status = (int)AppointmentStatus.Completed, lastWeekStart, lastWeekEnd, tz = timeZoneId }, ct: ct);
 
         var revenueMonthRaw = await _db.QueryAsync<DateAmountRow>(
             $"""
-            SELECT "ScheduledAt"::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
+            SELECT (timezone(@tz, "ScheduledAt"))::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
             FROM "Appointments"
             WHERE {apptWhere} AND "Status" = @status
               AND "ScheduledAt" >= @monthStart AND "ScheduledAt" < @weekEnd
-            GROUP BY "ScheduledAt"::date
+            GROUP BY (timezone(@tz, "ScheduledAt"))::date
             """,
-            new { status = (int)AppointmentStatus.Completed, monthStart, weekEnd }, ct: ct);
+            new { status = (int)AppointmentStatus.Completed, monthStart, weekEnd, tz = timeZoneId }, ct: ct);
 
         var revenueLastMonthRaw = await _db.QueryAsync<DateAmountRow>(
             $"""
-            SELECT "ScheduledAt"::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
+            SELECT (timezone(@tz, "ScheduledAt"))::date AS "Date", COALESCE(SUM("ConsultationFee"), 0) AS "Amount"
             FROM "Appointments"
             WHERE {apptWhere} AND "Status" = @status
               AND "ScheduledAt" >= @prevMonthStart AND "ScheduledAt" < @monthStart
-            GROUP BY "ScheduledAt"::date
+            GROUP BY (timezone(@tz, "ScheduledAt"))::date
             """,
-            new { status = (int)AppointmentStatus.Completed, prevMonthStart, monthStart }, ct: ct);
+            new { status = (int)AppointmentStatus.Completed, prevMonthStart, monthStart, tz = timeZoneId }, ct: ct);
 
         var upcoming = await _db.QueryAsync<UpcomingApptRow>(
             $"""
@@ -363,22 +367,25 @@ public class DashboardService : IDashboardService
         var completionRate = totalAppts == 0 ? 0 : (double)completedAppts / totalAppts;
         var careScore = Math.Round(Math.Min(5.0, 3.6 + conversionRate / 40.0 + completionRate * 0.8), 1);
 
+        static bool SameHospitalDate(DateTime sqlDate, DateTime hospitalDate) =>
+            sqlDate.Year == hospitalDate.Year && sqlDate.Month == hospitalDate.Month && sqlDate.Day == hospitalDate.Day;
+
         var trend = Enumerable.Range(0, 7)
             .Select(offset =>
             {
-                var date = todayStart.AddDays(-(6 - offset));
-                var count = trendRaw.FirstOrDefault(x => x.Date == date)?.Count ?? 0;
+                var date = hospitalToday.AddDays(-(6 - offset));
+                var count = trendRaw.FirstOrDefault(x => SameHospitalDate(x.Date, date))?.Count ?? 0;
                 return new { date = date.ToString("yyyy-MM-dd"), count };
             })
             .ToList();
 
-        static List<object> BuildApptSeries(IEnumerable<ApptWeekRow> raw, DateTime rangeStart, int days)
+        static List<object> BuildApptSeries(IEnumerable<ApptWeekRow> raw, DateTime hospitalRangeStart, int days)
         {
             return Enumerable.Range(0, days)
                 .Select(offset =>
                 {
-                    var date = rangeStart.AddDays(offset);
-                    var row = raw.FirstOrDefault(x => x.Date == date);
+                    var date = hospitalRangeStart.AddDays(offset);
+                    var row = raw.FirstOrDefault(x => SameHospitalDate(x.Date, date));
                     return (object)new
                     {
                         date = date.ToString("yyyy-MM-dd"),
@@ -390,27 +397,27 @@ public class DashboardService : IDashboardService
                 .ToList();
         }
 
-        static List<object> BuildRevenueSeries(IEnumerable<DateAmountRow> raw, DateTime rangeStart, int days)
+        static List<object> BuildRevenueSeries(IEnumerable<DateAmountRow> raw, DateTime hospitalRangeStart, int days)
         {
             return Enumerable.Range(0, days)
                 .Select(offset =>
                 {
-                    var date = rangeStart.AddDays(offset);
-                    var amount = raw.FirstOrDefault(x => x.Date == date)?.Amount ?? 0m;
+                    var date = hospitalRangeStart.AddDays(offset);
+                    var amount = raw.FirstOrDefault(x => SameHospitalDate(x.Date, date))?.Amount ?? 0m;
                     return (object)new { date = date.ToString("yyyy-MM-dd"), label = date.ToString("dd MMM"), amount };
                 })
                 .ToList();
         }
 
-        var appointments_week = BuildApptSeries(apptWeekRaw, weekAgo, 7);
-        var appointments_last_week = BuildApptSeries(apptLastWeekRaw, lastWeekStart, 7);
+        var appointments_week = BuildApptSeries(apptWeekRaw, hospitalToday.AddDays(-6), 7);
+        var appointments_last_week = BuildApptSeries(apptLastWeekRaw, hospitalToday.AddDays(-13), 7);
 
-        var revenue_week = BuildRevenueSeries(revenueWeekRaw, weekAgo, 7);
-        var revenue_last_week = BuildRevenueSeries(revenueLastWeekRaw, lastWeekStart, 7);
-        var mtdDays = Math.Max(1, (todayStart - monthStart).Days + 1);
-        var revenue_month = BuildRevenueSeries(revenueMonthRaw, monthStart, mtdDays);
-        var prevMonthDays = Math.Max(1, (monthStart - prevMonthStart).Days);
-        var revenue_last_month = BuildRevenueSeries(revenueLastMonthRaw, prevMonthStart, prevMonthDays);
+        var revenue_week = BuildRevenueSeries(revenueWeekRaw, hospitalToday.AddDays(-6), 7);
+        var revenue_last_week = BuildRevenueSeries(revenueLastWeekRaw, hospitalToday.AddDays(-13), 7);
+        var mtdDays = Math.Max(1, (hospitalToday - hospitalMonthStart).Days + 1);
+        var revenue_month = BuildRevenueSeries(revenueMonthRaw, hospitalMonthStart, mtdDays);
+        var prevMonthDays = Math.Max(1, (hospitalMonthStart - hospitalMonthStart.AddMonths(-1)).Days);
+        var revenue_last_month = BuildRevenueSeries(revenueLastMonthRaw, hospitalMonthStart.AddMonths(-1), prevMonthDays);
         var revenue_last_month_total = revenuePrevMonthAppts + revenuePrevMonthReferrals;
 
         static double PctChange(int current, int previous) =>
@@ -476,8 +483,22 @@ public class DashboardService : IDashboardService
 
     public async Task<object> GetClinicalOverviewAsync(DateTime? date, string? scope, Guid? doctorUserId, CancellationToken ct = default)
     {
-        var dayStart = DateTime.SpecifyKind((date ?? DateTime.UtcNow).Date, DateTimeKind.Utc);
-        var dayEnd = dayStart.AddDays(1);
+        var timeZoneId = await GetTenantTimezoneAsync(ct);
+        DateTime dayStart;
+        DateTime dayEnd;
+        string hospitalDateLabel;
+        if (date.HasValue)
+        {
+            var hospitalDay = DateTime.SpecifyKind(date.Value.Date, DateTimeKind.Unspecified);
+            (dayStart, dayEnd) = TenantTimeHelper.HospitalDayRangeUtc(hospitalDay, timeZoneId);
+            hospitalDateLabel = hospitalDay.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            (dayStart, dayEnd) = TenantTimeHelper.HospitalTodayRangeUtc(timeZoneId);
+            hospitalDateLabel = TenantTimeHelper.UtcToHospitalLocal(DateTime.UtcNow, timeZoneId)
+                .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        }
 
         var viewAll = string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase);
         Guid? filterDoctorId = null;
@@ -547,7 +568,7 @@ public class DashboardService : IDashboardService
         return new
         {
             doctor_name = doctorName,
-            date = dayStart.ToString("yyyy-MM-dd"),
+            date = hospitalDateLabel,
             scope = viewAll ? "all" : "mine",
             filter_doctor_user_id = filterDoctorId,
             stats = new
@@ -573,6 +594,16 @@ public class DashboardService : IDashboardService
                 is_mine = myUserId.HasValue && a.DoctorUserId == myUserId,
             }),
         };
+    }
+
+    private async Task<string> GetTenantTimezoneAsync(CancellationToken ct)
+    {
+        var tz = await _db.QueryFirstOrDefaultAsync<string>(
+            """SELECT "Timezone" FROM "Tenants" WHERE "Id" = @tenantId LIMIT 1""",
+            new { tenantId = _tenant.TenantId },
+            ignoreTenant: true,
+            ct: ct);
+        return TenantTimeHelper.NormalizeTimeZoneId(tz);
     }
 
     private sealed class DoctorOptionRow

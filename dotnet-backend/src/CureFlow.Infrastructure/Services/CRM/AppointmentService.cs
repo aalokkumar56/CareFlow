@@ -18,11 +18,11 @@ public class AppointmentService : IAppointmentService
     private readonly INotificationPublisher _notifications;
 
     private const string DefaultConfirmationBody =
-        "Namaste {name}, your appointment with {doctor} on {date} at {time} is confirmed. Please reach 15 min early. - Cure & Care Hospital";
+        "Namaste {name}, your appointment with {doctor} on {date} at {time_with_zone} is confirmed. Please reach 15 min early. - Cure & Care Hospital";
     private const string DefaultRescheduledBody =
-        "Namaste {name}, your appointment with {doctor} ({department}) has been rescheduled to {date} at {time}. Please reach 15 min early. - Cure & Care Hospital";
+        "Namaste {name}, your appointment with {doctor} ({department}) has been rescheduled to {date} at {time_with_zone}. Please reach 15 min early. - Cure & Care Hospital";
     private const string DefaultCancelledBody =
-        "Namaste {name}, your appointment with {doctor} on {date} at {time} has been cancelled. Reply here to rebook. - Cure & Care Hospital";
+        "Namaste {name}, your appointment with {doctor} on {date} at {time_with_zone} has been cancelled. Reply here to rebook. - Cure & Care Hospital";
 
     public AppointmentService(
         ICureFlowDbSession db,
@@ -290,10 +290,11 @@ public class AppointmentService : IAppointmentService
     {
         try
         {
+            var timeZoneId = await GetTenantTimezoneAsync(ct);
             var bodyTemplate = await ResolveTemplateBodyAsync(templateKey, defaultBody, ct);
-            var body = MessageTemplateHelper.Render(bodyTemplate, BuildTemplateValues(patient, appointment));
+            var body = MessageTemplateHelper.Render(bodyTemplate, BuildTemplateValues(patient, appointment, timeZoneId));
             await _conversations.SendToPatientAsync(patient.Id, body, ct);
-            await TrySendAppointmentEmailAsync(templateKey, patient, appointment, body, ct);
+            await TrySendAppointmentEmailAsync(templateKey, patient, appointment, body, timeZoneId, ct);
         }
         catch (Exception ex)
         {
@@ -303,7 +304,7 @@ public class AppointmentService : IAppointmentService
     }
 
     private async Task TrySendAppointmentEmailAsync(
-        string templateKey, Patient patient, Appointment appointment, string body, CancellationToken ct)
+        string templateKey, Patient patient, Appointment appointment, string body, string? timeZoneId, CancellationToken ct)
     {
         try
         {
@@ -314,11 +315,12 @@ public class AppointmentService : IAppointmentService
             if (emailSettings == null || !emailSettings.Enabled || !emailSettings.SendWithWhatsApp)
                 return;
 
+            var hospitalDate = TenantTimeHelper.FormatHospitalDate(appointment.ScheduledAt, timeZoneId);
             var subject = templateKey switch
             {
-                AppointmentTemplateKeys.Confirmation => $"Appointment confirmed — {appointment.ScheduledAt:dd MMM yyyy}",
-                AppointmentTemplateKeys.Rescheduled => $"Appointment rescheduled — {appointment.ScheduledAt:dd MMM yyyy}",
-                AppointmentTemplateKeys.Cancelled => $"Appointment cancelled — {appointment.ScheduledAt:dd MMM yyyy}",
+                AppointmentTemplateKeys.Confirmation => $"Appointment confirmed — {hospitalDate}",
+                AppointmentTemplateKeys.Rescheduled => $"Appointment rescheduled — {hospitalDate}",
+                AppointmentTemplateKeys.Cancelled => $"Appointment cancelled — {hospitalDate}",
                 _ => "Appointment update — Cure & Care Hospital",
             };
 
@@ -368,12 +370,25 @@ public class AppointmentService : IAppointmentService
         return template?.Body ?? defaultBody;
     }
 
-    private static Dictionary<string, string?> BuildTemplateValues(Patient patient, Appointment appointment) => new()
+    private async Task<string> GetTenantTimezoneAsync(CancellationToken ct)
     {
-        ["name"] = patient.Name,
-        ["doctor"] = appointment.DoctorName,
-        ["department"] = appointment.Department,
-        ["date"] = appointment.ScheduledAt.ToString("dd MMM yyyy"),
-        ["time"] = appointment.ScheduledAt.ToString("hh:mm tt"),
-    };
+        var tz = await _db.QueryFirstOrDefaultAsync<string>(
+            """SELECT "Timezone" FROM "Tenants" WHERE "Id" = @tenantId LIMIT 1""",
+            new { tenantId = _db.TenantId },
+            ignoreTenant: true,
+            ct: ct);
+        return TenantTimeHelper.NormalizeTimeZoneId(tz);
+    }
+
+    private static Dictionary<string, string?> BuildTemplateValues(
+        Patient patient, Appointment appointment, string? timeZoneId)
+    {
+        // patientTimeZoneId reserved for later dual-local WhatsApp; null = hospital only
+        var parts = AppointmentMessageTime.Format(appointment.ScheduledAt, timeZoneId, patientTimeZoneId: null);
+        var values = AppointmentMessageTime.ToTemplateValues(parts);
+        values["name"] = patient.Name;
+        values["doctor"] = appointment.DoctorName;
+        values["department"] = appointment.Department;
+        return values;
+    }
 }

@@ -1,3 +1,4 @@
+using CureFlow.Application.Common;
 using CureFlow.Application.DTOs;
 using CureFlow.Application.Interfaces;
 using CureFlow.Domain.Entities.Saas;
@@ -190,6 +191,7 @@ public class PlatformTenantsController : ControllerBase
         rejection_reason = t.RejectionReason,
         approved_at = t.ApprovedAt,
         onboarding_complete = t.OnboardingComplete,
+        timezone = t.Timezone ?? TenantTimeHelper.DefaultTimeZoneId,
         plan = t.Plan.ToString(),
         subscription_status = t.SubscriptionStatus.ToString(),
         trial_ends_at = t.TrialEndsAt,

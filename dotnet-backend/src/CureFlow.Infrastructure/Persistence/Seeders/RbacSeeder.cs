@@ -32,13 +32,16 @@ public static class RbacSeeder
             ignoreTenant: true,
             ct: ct);
 
-        var definitions = new (string Category, string Name, string Body)[]
+        var definitions = new (string Category, string Name, string Body, string LegacyBody)[]
         {
             (AppointmentTemplateKeys.Confirmation, "Appointment Confirmation",
+                "Namaste {name}, your appointment with {doctor} on {date} at {time_with_zone} is confirmed. Please reach 15 min early. - Cure & Care Hospital",
                 "Namaste {name}, your appointment with {doctor} on {date} at {time} is confirmed. Please reach 15 min early. - Cure & Care Hospital"),
             (AppointmentTemplateKeys.Rescheduled, "Appointment Rescheduled",
+                "Namaste {name}, your appointment with {doctor} ({department}) has been rescheduled to {date} at {time_with_zone}. Please reach 15 min early. - Cure & Care Hospital",
                 "Namaste {name}, your appointment with {doctor} ({department}) has been rescheduled to {date} at {time}. Please reach 15 min early. - Cure & Care Hospital"),
             (AppointmentTemplateKeys.Cancelled, "Appointment Cancelled",
+                "Namaste {name}, your appointment with {doctor} on {date} at {time_with_zone} has been cancelled. Reply here to rebook. - Cure & Care Hospital",
                 "Namaste {name}, your appointment with {doctor} on {date} at {time} has been cancelled. Reply here to rebook. - Cure & Care Hospital"),
         };
 
@@ -53,10 +56,32 @@ public static class RbacSeeder
                 ignoreTenant: true,
                 ct: ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var (category, name, body) in definitions)
+            foreach (var (category, name, body, legacyBody) in definitions)
             {
                 if (existingCategories.Contains(category))
+                {
+                    // Upgrade untouched seeded defaults so WhatsApp includes zone labels.
+                    await db.ExecuteAsync(
+                        """
+                        UPDATE "Templates"
+                        SET "Body" = @body, "UpdatedAt" = @updatedAt
+                        WHERE "TenantId" = @tenantId
+                          AND "Category" = @category
+                          AND "IsDeleted" = false
+                          AND "Body" = @legacyBody
+                        """,
+                        new
+                        {
+                            body,
+                            legacyBody,
+                            category,
+                            tenantId = tenant.Id,
+                            updatedAt = DateTime.UtcNow,
+                        },
+                        ignoreTenant: true,
+                        ct: ct);
                     continue;
+                }
 
                 await db.InsertAsync(new QuickTemplate
                 {

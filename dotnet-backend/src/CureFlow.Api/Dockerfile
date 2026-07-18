@@ -13,6 +13,10 @@ RUN dotnet publish -c Release -o /app /p:UseAppHost=false
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app ./
+# Render/shared Linux containers often hit the inotify watcher limit (128).
+# Config reload is unnecessary in containers — env vars are the source of truth.
 ENV ASPNETCORE_URLS=http://+:8080
+ENV DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE=false
+ENV DOTNET_USE_POLLING_FILE_WATCHER=1
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "CureFlow.Api.dll"]

@@ -43,6 +43,7 @@ public class HospitalProfileService : IHospitalProfileService
 
     private async Task<object> LoadProfileAsync(CancellationToken ct)
     {
+        var timezone = await GetTenantTimezoneAsync(ct);
         var where = SqlFragments.WhereActive<HospitalProfile>(ignoreTenant: false);
         var p = await _db.QueryFirstOrDefaultAsync<HospitalProfile>(
             $"""SELECT * FROM "HospitalProfiles" WHERE {where} LIMIT 1""", ct: ct);
@@ -59,6 +60,7 @@ public class HospitalProfileService : IHospitalProfileService
                 website = "",
                 working_hours = "",
                 emergency_24x7 = false,
+                timezone,
                 departments = new List<object>(),
                 services = new List<string>(),
                 doctors = new List<object>(),
@@ -67,7 +69,7 @@ public class HospitalProfileService : IHospitalProfileService
             };
         }
 
-        return ToViewModel(p);
+        return ToViewModel(p, timezone);
     }
 
     public Task<IReadOnlyList<string>> ListDepartmentsAsync(CancellationToken ct = default)
@@ -83,13 +85,23 @@ public class HospitalProfileService : IHospitalProfileService
         var isNew = p == null;
         p ??= new HospitalProfile();
 
+        var timezoneOnly = false;
         if (profile is JsonElement payload)
-            ApplyPayload(p, payload);
+        {
+            timezoneOnly = IsTimezoneOnlyPayload(payload);
+            if (!timezoneOnly)
+                ApplyPayload(p, payload);
+            await TryUpdateTenantTimezoneAsync(payload, ct);
+        }
 
-        if (isNew)
-            await _db.InsertAsync(p, ct: ct);
-        else
-            await _db.UpdateAsync(p, ct: ct);
+        // Timezone lives on Tenants — do not insert/overwrite an empty HospitalProfiles row.
+        if (!timezoneOnly)
+        {
+            if (isNew)
+                await _db.InsertAsync(p, ct: ct);
+            else
+                await _db.UpdateAsync(p, ct: ct);
+        }
 
         InvalidateCache();
     }
@@ -116,7 +128,52 @@ public class HospitalProfileService : IHospitalProfileService
             await _db.UpdateAsync(p, ct: ct);
 
         InvalidateCache();
-        return ToViewModel(p);
+        var timezone = await GetTenantTimezoneAsync(ct);
+        return ToViewModel(p, timezone);
+    }
+
+    private async Task TryUpdateTenantTimezoneAsync(JsonElement payload, CancellationToken ct)
+    {
+        if (!payload.TryGetProperty("timezone", out var tzEl) && !payload.TryGetProperty("Timezone", out tzEl))
+            return;
+        if (tzEl.ValueKind != JsonValueKind.String)
+            return;
+
+        var timezone = TenantTimeHelper.RequireValidTimeZoneId(tzEl.GetString());
+        await _db.ExecuteAsync(
+            """
+            UPDATE "Tenants"
+            SET "Timezone" = @timezone, "UpdatedAt" = @updatedAt
+            WHERE "Id" = @tenantId
+            """,
+            new { timezone, updatedAt = DateTime.UtcNow, tenantId = _tenant.TenantId },
+            ignoreTenant: true,
+            ct: ct);
+    }
+
+    private async Task<string> GetTenantTimezoneAsync(CancellationToken ct)
+    {
+        var tz = await _db.QueryFirstOrDefaultAsync<string>(
+            """SELECT "Timezone" FROM "Tenants" WHERE "Id" = @tenantId LIMIT 1""",
+            new { tenantId = _tenant.TenantId },
+            ignoreTenant: true,
+            ct: ct);
+        return TenantTimeHelper.NormalizeTimeZoneId(tz);
+    }
+
+    private static bool IsTimezoneOnlyPayload(JsonElement payload)
+    {
+        var hasTimezone = false;
+        foreach (var prop in payload.EnumerateObject())
+        {
+            if (prop.NameEquals("timezone") || prop.NameEquals("Timezone"))
+            {
+                hasTimezone = true;
+                continue;
+            }
+            return false;
+        }
+        return hasTimezone;
     }
 
     private static void ApplyPayload(HospitalProfile p, JsonElement payload)
@@ -130,13 +187,20 @@ public class HospitalProfileService : IHospitalProfileService
         if (payload.TryGetProperty("emergency_24x7", out var emergencyFlag) && emergencyFlag.ValueKind is JsonValueKind.True or JsonValueKind.False)
             p.Emergency24x7 = emergencyFlag.GetBoolean();
 
-        p.Phones = ReadStringArray(payload, "phones");
-        p.Emails = ReadStringArray(payload, "emails");
-        p.DepartmentsJson = ReadRawJsonArray(payload, "departments");
-        p.ServicesJson = ReadRawJsonArray(payload, "services");
-        p.DoctorsJson = ReadRawJsonArray(payload, "doctors");
-        p.PackagesJson = ReadRawJsonArray(payload, "packages");
-        p.FaqsJson = ReadRawJsonArray(payload, "faqs");
+        if (payload.TryGetProperty("phones", out _))
+            p.Phones = ReadStringArray(payload, "phones");
+        if (payload.TryGetProperty("emails", out _))
+            p.Emails = ReadStringArray(payload, "emails");
+        if (payload.TryGetProperty("departments", out _))
+            p.DepartmentsJson = ReadRawJsonArray(payload, "departments");
+        if (payload.TryGetProperty("services", out _))
+            p.ServicesJson = ReadRawJsonArray(payload, "services");
+        if (payload.TryGetProperty("doctors", out _))
+            p.DoctorsJson = ReadRawJsonArray(payload, "doctors");
+        if (payload.TryGetProperty("packages", out _))
+            p.PackagesJson = ReadRawJsonArray(payload, "packages");
+        if (payload.TryGetProperty("faqs", out _))
+            p.FaqsJson = ReadRawJsonArray(payload, "faqs");
     }
 
     private static List<string> ReadStringArray(JsonElement payload, string property)
@@ -155,7 +219,7 @@ public class HospitalProfileService : IHospitalProfileService
         return arr.GetRawText();
     }
 
-    private static object ToViewModel(HospitalProfile p)
+    private static object ToViewModel(HospitalProfile p, string timezone)
     {
         static object ParseJson(string raw)
         {
@@ -182,6 +246,7 @@ public class HospitalProfileService : IHospitalProfileService
             website = p.Website,
             working_hours = p.WorkingHours,
             emergency_24x7 = p.Emergency24x7,
+            timezone,
             departments = ParseJson(p.DepartmentsJson),
             services = ParseJson(p.ServicesJson),
             doctors = ParseJson(p.DoctorsJson),

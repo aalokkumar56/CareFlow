@@ -5,6 +5,22 @@ using CureFlow.Infrastructure.Persistence.Seeders;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
+// Containers (Render, Docker) share a low inotify limit. Watching appsettings*.json
+// for live reload creates FileSystemWatchers and can crash startup with:
+// "The configured user limit (128) on the number of inotify instances has been reached".
+// Prefer env vars for production config; disable file reload before host build.
+if (string.Equals(
+        Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"),
+        "true",
+        StringComparison.OrdinalIgnoreCase)
+    || string.Equals(
+        Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+        Environments.Production,
+        StringComparison.OrdinalIgnoreCase))
+{
+    Environment.SetEnvironmentVariable("DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();

@@ -21,6 +21,11 @@ import {
   CalendarBlank, CheckCircle, Clock, Stethoscope, UserCircle,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import {
+  formatHospitalTime12h,
+  hospitalTodayDateStr,
+  resolveHospitalTimezone,
+} from "@/lib/tenantTime";
 
 const STATUS_LABELS = {
   scheduled: "Scheduled",
@@ -30,24 +35,14 @@ const STATUS_LABELS = {
   no_show: "No-show",
 };
 
-const formatTime = (iso) => {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-};
-
-const todayIso = () => new Date().toISOString().slice(0, 10);
-
 const DoctorDashboard = () => {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
+  const hospitalTz = resolveHospitalTimezone(tenant);
   const { can } = usePermissions();
   const navigate = useNavigate();
   const canEditAppointment = can(PERMISSIONS.AppointmentEdit);
 
-  const [selectedDate, setSelectedDate] = useState(todayIso);
+  const [selectedDate, setSelectedDate] = useState(() => hospitalTodayDateStr(hospitalTz));
   const [scope, setScope] = useState("mine");
   const [doctorFilter, setDoctorFilter] = useState("");
 
@@ -192,7 +187,7 @@ const DoctorDashboard = () => {
                     data-testid={`doctor-appt-row-${appt.id}`}
                   >
                     <div className="shrink-0 w-20 text-[13px] font-semibold text-[#064E3B]">
-                      {formatTime(appt.scheduled_at)}
+                      {formatHospitalTime12h(appt.scheduled_at, hospitalTz)}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">

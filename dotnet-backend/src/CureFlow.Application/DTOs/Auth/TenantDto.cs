@@ -13,6 +13,7 @@ public record TenantDto(
     string? RejectionReason,
     DateTime? ApprovedAt,
     bool OnboardingComplete,
+    string? Timezone,
     DateTime CreatedAt);
 
 public record SessionDto(UserDto User, TenantDto Tenant);

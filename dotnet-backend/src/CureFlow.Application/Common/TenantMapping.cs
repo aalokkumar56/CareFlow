@@ -15,5 +15,6 @@ public static class TenantMapping
         tenant.RejectionReason,
         tenant.ApprovedAt,
         tenant.OnboardingComplete,
+        tenant.Timezone ?? TenantTimeHelper.DefaultTimeZoneId,
         tenant.CreatedAt);
 }

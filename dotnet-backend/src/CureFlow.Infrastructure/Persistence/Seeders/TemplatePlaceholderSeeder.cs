@@ -11,7 +11,9 @@ public static class TemplatePlaceholderSeeder
     [
         ("name", "Patient name", "Full name of the patient", "Rajesh Kumar"),
         ("date", "Appointment date", "Scheduled date", "29 May 2026"),
-        ("time", "Appointment time", "Scheduled time", "10:30 AM"),
+        ("time", "Appointment time", "Scheduled time (hospital local)", "10:30 AM"),
+        ("time_with_zone", "Appointment time with zone", "Hospital-local time with timezone label", "10:30 AM IST"),
+        ("timezone_abbr", "Timezone abbreviation", "Hospital timezone short label", "IST"),
         ("doctor", "Doctor name", "Assigned doctor or specialist", "Dr. Sharma"),
         ("department", "Department", "Department or specialty", "Cardiology"),
         ("hospital", "Hospital name", "Your hospital display name", "Cure & Care Hospital"),
