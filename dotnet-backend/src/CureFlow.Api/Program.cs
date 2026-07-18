@@ -35,15 +35,22 @@ await using (var scope = app.Services.CreateAsyncScope())
     // Permissions catalog — lightweight, required in every environment.
     await RbacSeeder.SeedAsync(session);
 
-    // Demo / E2E / test-phone data — local/dev only. Keep off on Render/Neon.
+    // Demo / E2E data — local/dev only. Production uses one-time /platform/auth/bootstrap.
     if (builder.Configuration.GetValue("Database:Seed", defaultValue: false)
         && !app.Environment.IsProduction())
     {
         await DemoSeeder.SeedAsync(session, hasher);
-        await PlatformUserSeeder.SeedAsync(session, hasher);
         await RbacSeeder.SeedAsync(session);
         await MultiHospitalE2eSeeder.SeedAsync(session, hasher);
         await RbacSeeder.SeedAsync(session);
+
+        // Platform owner is normally created once via the /platform/login setup form
+        // (bootstrap API). Opt in to seeding the default ops account for automated
+        // tests by setting Database:SeedPlatformUser=true.
+        if (builder.Configuration.GetValue("Database:SeedPlatformUser", defaultValue: false))
+        {
+            await PlatformUserSeeder.SeedAsync(session, hasher);
+        }
 
         if (builder.Configuration.GetValue("WhatsApp:UseTestPhone", defaultValue: false))
         {
@@ -52,14 +59,6 @@ await using (var scope = app.Services.CreateAsyncScope())
             var scopeSlug = builder.Configuration["WhatsApp:TestPhoneTenantSlug"];
             await TestPhoneSeeder.SeedAsync(session, seedLogger, scopeSlug);
         }
-    }
-    else if (builder.Configuration.GetValue("Database:SeedPlatformUsers", defaultValue: false))
-    {
-        // Explicit one-shot bootstrap (safe to leave true briefly in Production).
-        // PlatformUserSeeder no-ops if ops@cureflow.in already exists.
-        logger.LogWarning(
-            "Seeding platform ops user (Database:SeedPlatformUsers=true). Turn this off after first login.");
-        await PlatformUserSeeder.SeedAsync(session, hasher);
     }
 }
 

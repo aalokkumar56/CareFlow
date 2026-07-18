@@ -14,10 +14,24 @@ platformApi.interceptors.request.use((config) => {
   return config;
 });
 
+const persistSession = (data) => {
+  localStorage.setItem("cureflow_platform_token", data.access_token);
+  return data;
+};
+
+export const fetchPlatformSetupStatus = async () => {
+  const res = await platformApi.get("/platform/auth/setup-status");
+  return res.data;
+};
+
+export const platformBootstrap = async ({ name, email, password }) => {
+  const res = await platformApi.post("/platform/auth/bootstrap", { name, email, password });
+  return persistSession(res.data);
+};
+
 export const platformLogin = async (email, password) => {
   const res = await platformApi.post("/platform/auth/login", { email, password });
-  localStorage.setItem("cureflow_platform_token", res.data.access_token);
-  return res.data;
+  return persistSession(res.data);
 };
 
 export const platformLogout = () => {

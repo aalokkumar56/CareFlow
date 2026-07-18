@@ -25,4 +25,8 @@ public record OnboardingStateDto(
 
 public record PlatformAuthResponse(string AccessToken, string Email, string Name);
 
+public record PlatformSetupStatusResponse(bool NeedsSetup);
+
+public record PlatformBootstrapRequest(string Name, string Email, string Password);
+
 public record RejectTenantRequest(string? Reason);
