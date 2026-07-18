@@ -110,6 +110,15 @@ public static class ServiceCollectionExtensions
                         PermitLimit = relaxedRateLimits ? 100 : 3,
                         QueueLimit = 0,
                     }));
+            options.AddPolicy("platform-bootstrap", httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(10),
+                        PermitLimit = relaxedRateLimits ? 100 : 3,
+                        QueueLimit = 0,
+                    }));
         });
 
         services.AddMemoryCache();
