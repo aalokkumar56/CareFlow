@@ -13,6 +13,12 @@ import {
   avatarGradient, formatPatientId, formatRupee, formatSource,
   getInitials, isVipPatient, relativeTime,
 } from "./patientUtils";
+import { useAuth } from "@/lib/auth";
+import {
+  formatHospitalDate,
+  formatHospitalTime12h,
+  resolveHospitalTimezone,
+} from "@/lib/tenantTime";
 
 const copyText = async (text, label) => {
   try {
@@ -47,6 +53,8 @@ const OverviewRow = ({ label, value, children }) => (
 );
 
 const PatientPreviewPanel = ({ patient, onClose, onEdit, className }) => {
+  const { tenant } = useAuth();
+  const hospitalTz = resolveHospitalTimezone(tenant);
   const [detail, setDetail] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [activity, setActivity] = useState([]);
@@ -255,9 +263,9 @@ const PatientPreviewPanel = ({ patient, onClose, onEdit, className }) => {
               </div>
               <div className="min-w-0">
                 <div className="text-[13px] font-semibold text-[#022C22]">
-                  {new Date(nextAppt.scheduled_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                  {formatHospitalDate(nextAppt.scheduled_at, hospitalTz, "MMM d, yyyy")}
                   {" · "}
-                  {new Date(nextAppt.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {formatHospitalTime12h(nextAppt.scheduled_at, hospitalTz)}
                 </div>
                 <div className="text-[12px] text-text-secondary mt-0.5">
                   {nextAppt.notes || nextAppt.chief_complaint || "Consultation"}

@@ -10,6 +10,8 @@ import {
 } from "@phosphor-icons/react";
 import { Link } from "@/lib/navigation";
 import EmptyState from "@/components/ui/EmptyState";
+import { useAuth } from "@/lib/auth";
+import { formatHospitalDateTime, resolveHospitalTimezone } from "@/lib/tenantTime";
 
 const formatRupee = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
@@ -64,6 +66,8 @@ const Section = ({
 );
 
 const MissedRevenue = () => {
+  const { tenant } = useAuth();
+  const hospitalTz = resolveHospitalTimezone(tenant);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -200,7 +204,7 @@ const MissedRevenue = () => {
                         <div className="text-ui-caption text-text-muted truncate">{a.doctor_name} · {a.department}</div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="text-ui-caption text-text-muted">{new Date(a.scheduled_at).toLocaleString()}</div>
+                        <div className="text-ui-caption text-text-muted">{formatHospitalDateTime(a.scheduled_at, hospitalTz, "MMM d, yyyy, h:mm a")}</div>
                         <div className="text-ui-caption font-medium text-orange-800">{formatRupee(a.estimated_loss)}</div>
                       </div>
                     </div>

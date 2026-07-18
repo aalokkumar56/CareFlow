@@ -34,9 +34,17 @@ import EmptyState from "@/components/ui/EmptyState";
 import { cn } from "@/lib/utils";
 import usePermissions from "@/hooks/usePermissions";
 import { PERMISSIONS } from "@/lib/permissions";
+import { useAuth } from "@/lib/auth";
+import {
+  formatHospitalDate,
+  formatHospitalTime12h,
+  resolveHospitalTimezone,
+} from "@/lib/tenantTime";
 
 const Patients = () => {
   const navigate = useNavigate();
+  const { tenant } = useAuth();
+  const hospitalTz = resolveHospitalTimezone(tenant);
   const { can } = usePermissions();
   const canCreatePatient = can(PERMISSIONS.PatientCreate);
   const { departments } = useDepartments();
@@ -446,10 +454,10 @@ const Patients = () => {
                             {nextAppt ? (
                               <>
                                 <div className="text-ui-base text-[#022C22]">
-                                  {new Date(nextAppt.scheduled_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                                  {formatHospitalDate(nextAppt.scheduled_at, hospitalTz, "MMM d, yyyy")}
                                 </div>
                                 <div className="text-ui-label text-text-muted">
-                                  {new Date(nextAppt.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                  {formatHospitalTime12h(nextAppt.scheduled_at, hospitalTz)}
                                 </div>
                               </>
                             ) : (

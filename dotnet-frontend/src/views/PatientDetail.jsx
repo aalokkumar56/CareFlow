@@ -41,17 +41,14 @@ import Vitals from "@/components/ehr/Vitals";
 import { ClinicalNotes, MedicalHistory, FamilyHistory } from "@/components/ehr/ClinicalNotes";
 import Lifestyle from "@/components/ehr/Lifestyle";
 import { useConsultationSession } from "@/hooks/useConsultationSession";
-
-const isSameDay = (dateStr) => {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
-};
+import { useAuth } from "@/lib/auth";
+import {
+  formatHospitalDate,
+  formatHospitalDateTime,
+  formatHospitalTime12h,
+  isSameHospitalDay,
+  resolveHospitalTimezone,
+} from "@/lib/tenantTime";
 
 const PATIENT_TAB_TRIGGER =
   "rounded-lg data-[state=active]:bg-[#064E3B] data-[state=active]:text-white";
@@ -77,6 +74,8 @@ const PatientBreadcrumb = ({ name }) => (
 const PatientDetail = () => {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { tenant } = useAuth();
+  const hospitalTz = resolveHospitalTimezone(tenant);
   const { canFetch, can } = usePermissions();
   const canClinical = canFetch(PERMISSIONS.ClinicalView);
   const canEditAppointment = can(PERMISSIONS.AppointmentEdit);
@@ -448,10 +447,7 @@ const PatientDetail = () => {
                     <span className="text-text-muted block text-[10px] uppercase tracking-wider">Appointment</span>
                     <span>
                       {consultationAppointment?.scheduled_at
-                        ? new Date(consultationAppointment.scheduled_at).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
+                        ? formatHospitalTime12h(consultationAppointment.scheduled_at, hospitalTz)
                         : "—"}
                       {consultationAppointment?.doctor_name ? ` · ${consultationAppointment.doctor_name}` : ""}
                     </span>
@@ -514,6 +510,7 @@ const PatientDetail = () => {
               onNavigate={handleTabChange}
               onOpenEdit={() => openDetailsForEdit(p)}
               highlightAppointmentId={appointmentId}
+              hospitalTz={hospitalTz}
             />
           </TabsContent>
 
@@ -587,7 +584,7 @@ const PatientDetail = () => {
           </TabsContent>
           <TabsContent value="timeline" className="mt-3">
             {activeTab === "timeline" && (
-              <MedicalTimeline patientId={id} data={data} enabled={activeTab === "timeline"} />
+              <MedicalTimeline patientId={id} data={data} enabled={activeTab === "timeline"} hospitalTz={hospitalTz} />
             )}
           </TabsContent>
         </Tabs>
@@ -629,34 +626,30 @@ const EmptySection = ({ message }) => (
   <div className="text-[13px] text-text-muted py-4 text-center">{message}</div>
 );
 
-const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit, highlightAppointmentId }) => {
+const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit, highlightAppointmentId, hospitalTz }) => {
   const p = data.patient;
-  const today = new Date().toLocaleDateString(undefined, {
-    weekday: "long", year: "numeric", month: "long", day: "numeric",
-  });
+  const today = formatHospitalDate(new Date().toISOString(), hospitalTz, "EEEE, MMMM d, yyyy");
 
   const appointments = data.appointments || [];
-  const todayAppointments = appointments.filter((a) => isSameDay(a.scheduled_at));
+  const todayAppointments = appointments.filter((a) => isSameHospitalDay(a.scheduled_at, hospitalTz));
   const todayVitals = (data.vital_signs || []).filter(
-    (v) => isSameDay(v.measured_at)
+    (v) => isSameHospitalDay(v.measured_at, hospitalTz)
   );
   const todayNotes = (data.clinical_notes || []).filter(
-    (n) => isSameDay(n.created_at)
+    (n) => isSameHospitalDay(n.created_at, hospitalTz)
   );
   const todayPrescriptions = (data.recent_prescriptions || []).filter(
-    (rx) => isSameDay(rx.prescribed_at)
+    (rx) => isSameHospitalDay(rx.prescribed_at, hospitalTz)
   );
 
-  const startOfTomorrow = new Date();
-  startOfTomorrow.setHours(24, 0, 0, 0);
-  const endRange = new Date();
-  endRange.setDate(endRange.getDate() + 7);
-  endRange.setHours(23, 59, 59, 999);
+  const now = Date.now();
+  const endRange = now + 7 * 24 * 3600 * 1000;
 
   const upcomingAppointments = appointments
     .filter((a) => {
-      const d = new Date(a.scheduled_at);
-      return d >= startOfTomorrow && d <= endRange && !["cancelled", "completed"].includes(a.status);
+      const t = new Date(a.scheduled_at).getTime();
+      return t > now && t <= endRange && !["cancelled", "completed"].includes(a.status)
+        && !isSameHospitalDay(a.scheduled_at, hospitalTz);
     })
     .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
     .slice(0, 5);
@@ -689,6 +682,7 @@ const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit, highlightAppoi
               <AppointmentRow
                 key={a.id}
                 a={a}
+                hospitalTz={hospitalTz}
                 highlighted={highlightAppointmentId && String(a.id) === String(highlightAppointmentId)}
               />
             ))}
@@ -706,8 +700,7 @@ const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit, highlightAppoi
             {upcomingAppointments.map((a) => (
               <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 text-[12px] py-1.5 border-b border-subtle last:border-0">
                 <span className="font-medium text-[#022C22]">
-                  {new Date(a.scheduled_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
-                  {" · "}{new Date(a.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {formatHospitalDateTime(a.scheduled_at, hospitalTz, "EEE, MMM d · h:mm a")}
                 </span>
                 <span className="text-text-secondary">{a.doctor_name} · {a.department}</span>
               </div>
@@ -745,7 +738,7 @@ const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit, highlightAppoi
               {todayVitals.map((v) => (
                 <div key={v.id}>
                   <div className="text-[11px] text-text-muted mb-1">
-                    {new Date(v.measured_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatHospitalTime12h(v.measured_at, hospitalTz)}
                     {v.recorded_by_name ? ` · ${v.recorded_by_name}` : ""}
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
@@ -780,7 +773,7 @@ const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit, highlightAppoi
                   <div className="text-[12px] font-semibold text-[#022C22]">
                     {NOTE_TYPE_LABELS[n.note_type] || n.note_type}
                     <span className="text-text-muted font-normal ml-2">
-                      {new Date(n.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {formatHospitalTime12h(n.created_at, hospitalTz)}
                     </span>
                   </div>
                   {n.subjective && (
@@ -876,7 +869,7 @@ const TodayOverview = ({ data, allergies, onNavigate, onOpenEdit, highlightAppoi
   );
 };
 
-const AppointmentRow = ({ a, highlighted = false }) => (
+const AppointmentRow = ({ a, highlighted = false, hospitalTz }) => (
   <div
     className={`border rounded-sm p-3 ${
       highlighted
@@ -888,7 +881,7 @@ const AppointmentRow = ({ a, highlighted = false }) => (
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <div className="text-[13px] font-semibold text-[#022C22]">
-          {new Date(a.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {formatHospitalTime12h(a.scheduled_at, hospitalTz)}
           {" · "}{a.doctor_name || "—"}
         </div>
         <div className="text-[12px] text-text-secondary mt-0.5">
@@ -1219,7 +1212,7 @@ const TIMELINE_ICONS = {
   lab_report: Flask,
 };
 
-const MedicalTimeline = ({ patientId, data, enabled = true }) => {
+const MedicalTimeline = ({ patientId, data, enabled = true, hospitalTz }) => {
   const [visits, setVisits] = useState([]);
   const [timeline, setTimeline] = useState([]);
   const [visitDetail, setVisitDetail] = useState(null);
@@ -1278,7 +1271,7 @@ const MedicalTimeline = ({ patientId, data, enabled = true }) => {
               <div key={a.id} className="border border-subtle rounded-sm p-3 text-[12px]">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="font-medium text-[#022C22]">
-                    {new Date(a.scheduled_at).toLocaleString()}
+                    {formatHospitalDateTime(a.scheduled_at, hospitalTz, "MMM d, yyyy, h:mm a")}
                     {" · "}{a.doctor_name || "—"}
                   </div>
                   <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-sm border border-subtle bg-secondary/30 capitalize">

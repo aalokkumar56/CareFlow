@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "@/lib/navigation";
-import { addDays, addWeeks, format, startOfWeek, subWeeks } from "date-fns";
 import AppShell from "@/components/layout/AppShell";
 import { api, normalizeApiError } from "@/lib/api";
 import { unwrapPaged, buildPageQuery } from "@/lib/pagination";
@@ -34,6 +33,18 @@ import usePermissions from "@/hooks/usePermissions";
 import { useAuth } from "@/lib/auth";
 import { normalizeRole, PERMISSIONS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import {
+  addCalendarDays,
+  formatCalendarDateStr,
+  formatHospitalDateTime,
+  hospitalDateStrFromIso,
+  hospitalDayRangeUtcIso,
+  hospitalLocalToUtcIso,
+  hospitalStartOfWeekDateStr,
+  hospitalWeekRangeUtcIso,
+  resolveHospitalTimezone,
+  utcIsoToHospitalFormParts,
+} from "@/lib/tenantTime";
 
 const APPOINTMENT_STATUS_LABELS = {
   scheduled: "Scheduled",
@@ -109,13 +120,13 @@ const emptyForm = () => ({
   patient_id: "", doctor_user_id: "", department: "", date: "", time: "10:00", notes: "",
 });
 
-const apptToEditForm = (a) => {
-  const dt = new Date(a.scheduled_at);
+const apptToEditForm = (a, timeZone) => {
+  const parts = utcIsoToHospitalFormParts(a.scheduled_at, timeZone);
   return {
     doctor_user_id: a.doctor_user_id || "",
     department: a.department || "",
-    date: dt.toISOString().slice(0, 10),
-    time: dt.toTimeString().slice(0, 5),
+    date: parts.date,
+    time: parts.time,
     notes: a.notes || "",
     status: a.status || "scheduled",
   };
@@ -124,7 +135,8 @@ const apptToEditForm = (a) => {
 
 const Appointments = () => {
   const [params] = useSearchParams();
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
+  const hospitalTz = resolveHospitalTimezone(tenant);
   const isDoctor = normalizeRole(user?.role) === "doctor";
   const { can } = usePermissions();
   const canCreateAppointment = can(PERMISSIONS.AppointmentCreate);
@@ -134,7 +146,7 @@ const Appointments = () => {
   const [rows, setRows] = useState([]);
   const [patients, setPatients] = useState([]);
   const [bookingOptions, setBookingOptions] = useState({ doctors: [] });
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 0 }));
+  const [weekStart, setWeekStart] = useState(() => hospitalStartOfWeekDateStr(hospitalTz));
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -144,15 +156,10 @@ const Appointments = () => {
   const [cancelTarget, setCancelTarget] = useState(null);
 
   const load = () => {
-    const today = new Date();
-    const rangeFrom =
-      dateFilter === "today"
-        ? new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
-        : weekStart.toISOString();
-    const rangeTo =
-      dateFilter === "today"
-        ? addDays(new Date(today.getFullYear(), today.getMonth(), today.getDate()), 1).toISOString()
-        : addDays(weekStart, 7).toISOString();
+    const todayRange = hospitalDayRangeUtcIso(null, hospitalTz);
+    const weekRange = hospitalWeekRangeUtcIso(weekStart, hospitalTz);
+    const rangeFrom = dateFilter === "today" ? todayRange.from : weekRange.from;
+    const rangeTo = dateFilter === "today" ? todayRange.to : weekRange.to;
     const qs = buildPageQuery({
       page: 1,
       page_size: 100,
@@ -165,7 +172,7 @@ const Appointments = () => {
     });
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [dateFilter, weekStart, doctorFilter, user?.id]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [dateFilter, weekStart, doctorFilter, user?.id, hospitalTz]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -181,7 +188,7 @@ const Appointments = () => {
       .catch(() => setBookingOptions({ doctors: [] }));
   }, []);
 
-  const weekEnd = addDays(weekStart, 6);
+  const weekEnd = addCalendarDays(weekStart, 6);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -200,10 +207,10 @@ const Appointments = () => {
   const visibleRows = useMemo(() => {
     if (dateFilter === "today") return filteredRows;
     return filteredRows.filter((a) => {
-      const d = new Date(a.scheduled_at);
-      return d >= weekStart && d <= addDays(weekStart, 7);
+      const day = hospitalDateStrFromIso(a.scheduled_at, hospitalTz);
+      return day >= weekStart && day <= weekEnd;
     });
-  }, [filteredRows, weekStart, dateFilter]);
+  }, [filteredRows, weekStart, weekEnd, dateFilter, hospitalTz]);
 
   const create = async () => {
     if (!form.patient_id || !form.doctor_user_id || !form.department || !form.date) {
@@ -214,12 +221,16 @@ const Appointments = () => {
       return;
     }
     try {
-      const dt = new Date(`${form.date}T${form.time}:00`);
+      const scheduledAt = hospitalLocalToUtcIso(form.date, form.time, hospitalTz);
+      if (!scheduledAt) {
+        toast.error("Invalid appointment date/time");
+        return;
+      }
       await api.post("/appointments", {
         patientId: form.patient_id,
         doctorUserId: form.doctor_user_id,
         department: form.department,
-        scheduledAt: dt.toISOString(),
+        scheduledAt,
         notes: form.notes,
       });
       toast.success("Appointment scheduled");
@@ -231,7 +242,7 @@ const Appointments = () => {
 
   const openEdit = (a) => {
     setEditingId(a.id);
-    setEditForm(apptToEditForm(a));
+    setEditForm(apptToEditForm(a, hospitalTz));
     setEditOpen(true);
   };
 
@@ -241,12 +252,16 @@ const Appointments = () => {
       return;
     }
     try {
-      const dt = new Date(`${editForm.date}T${editForm.time}:00`);
+      const scheduledAt = hospitalLocalToUtcIso(editForm.date, editForm.time, hospitalTz);
+      if (!scheduledAt) {
+        toast.error("Invalid appointment date/time");
+        return;
+      }
       const previous = rows.find((r) => r.id === editingId);
       await api.patch(`/appointments/${editingId}`, {
         doctorUserId: editForm.doctor_user_id,
         department: editForm.department,
-        scheduledAt: dt.toISOString(),
+        scheduledAt,
         notes: editForm.notes,
       });
       if (editForm.status && previous && editForm.status !== previous.status) {
@@ -276,8 +291,11 @@ const Appointments = () => {
   const renderApptCard = (a, { compact } = {}) => {
     const dept = a.department || "General Medicine";
     const doctorLabel = a.doctor_name ? ` · ${a.doctor_name}` : "";
-    const scheduledAt = new Date(a.scheduled_at);
-    const timeLabel = format(scheduledAt, compact ? "d MMM · h:mm a" : "MMM d, h:mm a");
+    const timeLabel = formatHospitalDateTime(
+      a.scheduled_at,
+      hospitalTz,
+      compact ? "d MMM · h:mm a" : "MMM d, h:mm a",
+    );
     const iconSize = compact ? "w-3 h-3" : "w-3.5 h-3.5";
     const btnClass = "h-9 w-9 rounded-xl flex items-center justify-center hover:bg-white/60";
     const terminal = a.status === "cancelled" || a.status === "no_show" || a.status === "completed";
@@ -365,17 +383,27 @@ const Appointments = () => {
             <Button
               variant="outline"
               className="rounded-xl glass-input h-9 px-3 text-[13px] font-medium"
-              onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 0 }))}
+              onClick={() => setWeekStart(hospitalStartOfWeekDateStr(hospitalTz))}
             >
               Today
             </Button>
-            <Button variant="outline" className="rounded-xl glass-input h-9 w-9 p-0" onClick={() => setWeekStart(subWeeks(weekStart, 1))} aria-label="Previous week">
+            <Button
+              variant="outline"
+              className="rounded-xl glass-input h-9 w-9 p-0"
+              onClick={() => setWeekStart(addCalendarDays(weekStart, -7))}
+              aria-label="Previous week"
+            >
               <CaretLeft weight="bold" />
             </Button>
             <span className="text-ui-sm font-medium text-[#022C22] px-1 min-w-[140px] text-center">
-              {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
+              {formatCalendarDateStr(weekStart, "MMM d")} – {formatCalendarDateStr(weekEnd, "MMM d, yyyy")}
             </span>
-            <Button variant="outline" className="rounded-xl glass-input h-9 w-9 p-0" onClick={() => setWeekStart(addWeeks(weekStart, 1))} aria-label="Next week">
+            <Button
+              variant="outline"
+              className="rounded-xl glass-input h-9 w-9 p-0"
+              onClick={() => setWeekStart(addCalendarDays(weekStart, 7))}
+              aria-label="Next week"
+            >
               <CaretRight weight="bold" />
             </Button>
           </div>

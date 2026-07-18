@@ -23,6 +23,7 @@ import usePermissions from "@/hooks/usePermissions";
 import { normalizeRole, PERMISSIONS } from "@/lib/permissions";
 import { useHospitalProfile } from "@/hooks/useHospitalProfile";
 import { cn } from "@/lib/utils";
+import { formatHospitalTime12h, resolveHospitalTimezone } from "@/lib/tenantTime";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -40,10 +41,6 @@ const REVENUE_PERIOD_OPTIONS = [
 
 const formatRupee = (n) => `₹ ${Number(n || 0).toLocaleString("en-IN")}`;
 
-const formatApptTime = (iso) => {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
-};
 
 const AVATAR_GRADIENTS = [
   "from-sky-300 to-blue-400",
@@ -61,7 +58,8 @@ const Dashboard = () => {
 };
 
 const OperationsDashboard = () => {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
+  const hospitalTz = resolveHospitalTimezone(tenant);
   const { can } = usePermissions();
   const showRevenue = can(PERMISSIONS.BillingView);
   const { hospitalName } = useHospitalProfile();
@@ -314,7 +312,7 @@ const OperationsDashboard = () => {
                 return (
                   <div key={appt.id} data-testid={`dashboard-upcoming-row-${idx}`} className={cn("flex items-center gap-2 py-2", idx > 0 && "border-t border-white/35")}>
                     <div className="w-12 shrink-0 text-right">
-                      <p className="text-ui-sm font-semibold text-[#022C22] leading-tight">{formatApptTime(appt.scheduled_at)}</p>
+                      <p className="text-ui-sm font-semibold text-[#022C22] leading-tight">{formatHospitalTime12h(appt.scheduled_at, hospitalTz)}</p>
                       <p className="text-ui-caption text-text-muted">{appt.duration_minutes || 30} min</p>
                     </div>
                     <div className={cn(
