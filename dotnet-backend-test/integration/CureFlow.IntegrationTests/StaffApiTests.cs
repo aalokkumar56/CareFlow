@@ -29,7 +29,7 @@ public class StaffApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public StaffApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Int730_StaffEndpoints_RequireAuth()
     {
         await using var host = CreateAuthHost();
@@ -41,7 +41,7 @@ public class StaffApiTests : IClassFixture<CustomWebApplicationFactory>
         (await client.GetAsync("/api/staff/booking-options")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int730_731_732_ListGetCreatePatchDelete_StaffProfile()
     {
         await using var host = CreateHostOrSkip();
@@ -117,7 +117,7 @@ public class StaffApiTests : IClassFixture<CustomWebApplicationFactory>
         getDeleted.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int733_734_SchedulesAndBookingOptions()
     {
         await using var host = CreateHostOrSkip();
@@ -172,7 +172,7 @@ public class StaffApiTests : IClassFixture<CustomWebApplicationFactory>
         deleteSchedule.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int730_ListNurses_ReturnsOk()
     {
         await using var host = CreateHostOrSkip();
@@ -242,8 +242,7 @@ public class StaffApiTests : IClassFixture<CustomWebApplicationFactory>
 
     private WebApplicationFactory<Program> CreateHostOrSkip()
     {
-        var connectionString = IntegrationDb.ResolveConnectionString();
-        Skip.If(connectionString is null, IntegrationTestHelpers.NoDatabaseReason);
+        var connectionString = IntegrationTestHelpers.RequireConnectionString();
         return CreateConfiguredHost(connectionString);
     }
 

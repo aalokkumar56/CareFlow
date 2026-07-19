@@ -16,7 +16,7 @@ public class PublicTenantEndpointTests : IClassFixture<CustomWebApplicationFacto
 
     public PublicTenantEndpointTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task GetTenantBySlug_UnknownSlug_ReturnsNotFound()
     {
         await using var host = IntegrationTestSupport.CreateHostOrSkip(_factory);
@@ -27,7 +27,7 @@ public class PublicTenantEndpointTests : IClassFixture<CustomWebApplicationFacto
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task GetTenantBySlug_KnownSlug_ReturnsPublicBrandingWithoutAuth()
     {
         await using var host = IntegrationTestSupport.CreateHostOrSkip(_factory);
@@ -48,7 +48,7 @@ public class PublicTenantEndpointTests : IClassFixture<CustomWebApplicationFacto
         body.TryGetProperty("contact_email", out _).Should().BeFalse();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task GetTenantContext_WithoutHeader_ReturnsUnresolved()
     {
         await using var host = IntegrationTestSupport.CreateHostOrSkip(_factory);
@@ -61,7 +61,7 @@ public class PublicTenantEndpointTests : IClassFixture<CustomWebApplicationFacto
         body.GetProperty("resolved").GetBoolean().Should().BeFalse();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task GetTenantContext_WithXTenantSlug_ReturnsResolvedTenant()
     {
         await using var host = IntegrationTestSupport.CreateHostOrSkip(_factory);

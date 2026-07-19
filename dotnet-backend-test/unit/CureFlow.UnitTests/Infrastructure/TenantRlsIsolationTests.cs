@@ -7,22 +7,21 @@ using FluentAssertions;
 using Npgsql;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
-/// <summary>PostgreSQL RLS enforcement at the database layer.</summary>
+/// <summary>PostgreSQL RLS enforcement at the database layer (non-bypass login role).</summary>
 public class TenantRlsIsolationTests
 {
     [Fact]
     public async Task RawSql_WithoutTenantContext_ReturnsZeroRowsUnderRls()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        await TestSeedHelper.EnsureMultiHospitalAsync(TestDbConnection.Require());
+        var connectionString = TestDbConnection.RequireRlsSubject();
 
         await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync();
-        if (await PostgresRlsSession.CurrentRoleBypassesRlsAsync(conn))
-            return;
+        (await PostgresRlsSession.CurrentRoleBypassesRlsAsync(conn))
+            .Should().BeFalse("cureflow_rls_test must be subject to RLS");
 
         var count = await conn.QueryFirstOrDefaultAsync<int>(
             """SELECT COUNT(*) FROM "Patients" WHERE "IsDeleted" = false""");
@@ -33,34 +32,24 @@ public class TenantRlsIsolationTests
     [Fact]
     public async Task RawSql_WithTenantContext_ReturnsOnlyTenantRows()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        await TestSeedHelper.EnsureMultiHospitalAsync(TestDbConnection.Require());
+        var connectionString = TestDbConnection.RequireRlsSubject();
 
-        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
 
-        await using (var probe = await dataSource.OpenConnectionAsync())
-        {
-            if (await PostgresRlsSession.CurrentRoleBypassesRlsAsync(probe))
-                return;
-        }
+        // set_config(..., is_local=true) only survives inside a transaction (matches CureFlowDbSession).
+        await using var tx = await conn.BeginTransactionAsync();
 
-        Guid alphaTenantId;
-        await using (var conn = await dataSource.OpenConnectionAsync())
-        {
-            await PostgresRlsSession.ConfigureAsync(conn, Guid.Empty, platformBypass: true);
-            alphaTenantId = await conn.QueryFirstOrDefaultAsync<Guid>(
-                """SELECT "Id" FROM "Tenants" WHERE "Slug" = @slug AND "IsDeleted" = false LIMIT 1""",
-                new { slug = "care-cure-althan" });
-        }
+        await PostgresRlsSession.ConfigureAsync(conn, Guid.Empty, platformBypass: true);
+        var alphaTenantId = await conn.QueryFirstOrDefaultAsync<Guid>(
+            """SELECT "Id" FROM "Tenants" WHERE "Slug" = @slug AND "IsDeleted" = false LIMIT 1""",
+            new { slug = "care-cure-althan" });
+        alphaTenantId.Should().NotBe(Guid.Empty, "multi-hospital seed must include care-cure-althan");
 
-        if (alphaTenantId == Guid.Empty)
-            return;
+        await PostgresRlsSession.ConfigureAsync(conn, alphaTenantId, platformBypass: false);
 
-        await using var scopedConn = await dataSource.OpenConnectionAsync();
-        await PostgresRlsSession.ConfigureAsync(scopedConn, alphaTenantId, platformBypass: false);
-
-        var ownCount = await scopedConn.QueryFirstOrDefaultAsync<int>(
+        var ownCount = await conn.QueryFirstOrDefaultAsync<int>(
             """
             SELECT COUNT(*) FROM "Patients"
             WHERE "IsDeleted" = false AND "Name" = @name
@@ -68,21 +57,22 @@ public class TenantRlsIsolationTests
             new { name = "Althan Exclusive Patient" });
         ownCount.Should().BeGreaterThan(0, "tenant-scoped session should see own patients");
 
-        var otherCount = await scopedConn.QueryFirstOrDefaultAsync<int>(
+        var otherCount = await conn.QueryFirstOrDefaultAsync<int>(
             """
             SELECT COUNT(*) FROM "Patients"
             WHERE "IsDeleted" = false AND "Name" = @name
             """,
             new { name = "Surat Exclusive Patient" });
         otherCount.Should().Be(0, "tenant-scoped session must not see other tenant patients");
+
+        await tx.CommitAsync();
     }
 
     [Fact]
     public async Task CrossTenant_GetById_ReturnsNull_UnderRls()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        await TestSeedHelper.EnsureMultiHospitalAsync(TestDbConnection.Require());
+        var connectionString = TestDbConnection.RequireRlsSubject();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
 
@@ -92,6 +82,7 @@ public class TenantRlsIsolationTests
 
         await using (var conn = await dataSource.OpenConnectionAsync())
         {
+            await using var tx = await conn.BeginTransactionAsync();
             await PostgresRlsSession.ConfigureAsync(conn, Guid.Empty, platformBypass: true);
             alphaTenantId = await conn.QueryFirstOrDefaultAsync<Guid>(
                 """SELECT "Id" FROM "Tenants" WHERE "Slug" = @slug AND "IsDeleted" = false LIMIT 1""",
@@ -106,11 +97,14 @@ public class TenantRlsIsolationTests
                 LIMIT 1
                 """,
                 new { tenantId = alphaTenantId, name = "Althan Exclusive Patient" });
+            await tx.CommitAsync();
         }
 
-        if (alphaTenantId == Guid.Empty || betaTenantId == Guid.Empty || alphaPatientId == Guid.Empty)
-            return;
+        alphaTenantId.Should().NotBe(Guid.Empty);
+        betaTenantId.Should().NotBe(Guid.Empty);
+        alphaPatientId.Should().NotBe(Guid.Empty);
 
+        // CureFlowDbSession opens its own transaction around ConfigureAsync + query.
         var betaTenant = new CurrentTenant { TenantId = betaTenantId, IsAuthenticated = true };
         var betaSession = new CureFlowDbSession(dataSource, betaTenant);
 

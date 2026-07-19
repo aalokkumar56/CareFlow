@@ -2,17 +2,15 @@ using CureFlow.Application.Common;
 using CureFlow.Domain.Entities;
 using CureFlow.Infrastructure.Persistence;
 using CureFlow.Infrastructure.Persistence.Dapper;
-using CureFlow.Infrastructure.Persistence.Seeders;
 using Dapper;
 using FluentAssertions;
 using Npgsql;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>
 /// Verifies tenant-scoped SQL filters and cross-tenant patient isolation at the DB layer.
-/// Integration tests skip when PostgreSQL is unavailable (set CUREFLOW_TEST_CONNECTION).
 /// </summary>
 public class TenantIsolationTests
 {
@@ -47,11 +45,8 @@ public class TenantIsolationTests
     [Fact]
     public async Task CrossTenant_GetById_ReturnsNull_WhenPatientBelongsToOtherTenant()
     {
-        var connectionString = ResolveConnectionString();
-        if (connectionString is null)
-        {
-            return; // skip — no DB
-        }
+        var connectionString = TestDbConnection.Require();
+        await TestSeedHelper.EnsureMultiHospitalAsync(connectionString);
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
 
@@ -77,11 +72,9 @@ public class TenantIsolationTests
                 new { tenantId = alphaTenantId, name = "Althan Exclusive Patient" });
         }
 
-        if (alphaTenantId == Guid.Empty || betaTenantId == Guid.Empty || alphaPatientId == Guid.Empty)
-        {
-            // Seeder not run yet — not a failure for unit-only CI
-            return;
-        }
+        alphaTenantId.Should().NotBe(Guid.Empty);
+        betaTenantId.Should().NotBe(Guid.Empty);
+        alphaPatientId.Should().NotBe(Guid.Empty);
 
         var betaTenant = new CurrentTenant { TenantId = betaTenantId, IsAuthenticated = true };
         var betaSession = new CureFlowDbSession(dataSource, betaTenant);
@@ -95,6 +88,4 @@ public class TenantIsolationTests
         own.Should().NotBeNull();
         own!.Name.Should().Be("Althan Exclusive Patient");
     }
-
-    private static string? ResolveConnectionString() => TestDbConnection.Resolve();
 }

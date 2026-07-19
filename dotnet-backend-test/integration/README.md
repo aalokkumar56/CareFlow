@@ -10,6 +10,11 @@ dotnet-backend-test/
 ├── CureFlow.IntegrationTest.sln
 ├── unit/
 │   └── CureFlow.UnitTests/
+│       ├── Domain/
+│       ├── Application/
+│       ├── Infrastructure/
+│       ├── Api/
+│       └── Helpers/
 └── integration/
     └── CureFlow.IntegrationTests/
 ```
@@ -19,11 +24,11 @@ Product code is referenced from `../dotnet-backend/src/` (not copied).
 ## Prerequisites
 
 - .NET 10 SDK
-- For tests that boot the API host: a reachable PostgreSQL connection (same as local API).  
-  Set `ConnectionStrings__Default` or use `appsettings` / user secrets on `CureFlow.Api`.  
+- A reachable PostgreSQL connection (same as local API). Suites **require** the DB — they do not skip.
+  Set `CUREFLOW_TEST_CONNECTION`, or `ConnectionStrings:Default` in `CureFlow.Api` `appsettings.Development.json` / `appsettings.json`.
   The smoke health test starts `WebApplicationFactory` and still runs lightweight startup seed (`RbacSeeder`) against the DB unless a future suite replaces that.
 
-Optional: `CUREFLOW_TEST_CONNECTION` for DB-focused suites moved from unit tests later.
+RLS suites create a local non-bypass role `cureflow_rls_test` when needed so policies are exercised under the `postgres` superuser connection string.
 
 ## Build
 

@@ -8,7 +8,7 @@ using FluentAssertions;
 using Npgsql;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>Audit log tenant isolation at the service layer.</summary>
 [Collection("DatabaseIntegration")]
@@ -17,9 +17,8 @@ public class AuditLogIsolationTests
     [Fact]
     public async Task TenantA_CannotRead_TenantB_AuditLogs()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        var connectionString = TestDbConnection.Require();
+        await TestSeedHelper.EnsureMultiHospitalAsync(connectionString);
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
 
@@ -37,8 +36,8 @@ public class AuditLogIsolationTests
                 new { slug = "city-hospital-surat" });
         }
 
-        if (alphaTenantId == Guid.Empty || betaTenantId == Guid.Empty)
-            return;
+        alphaTenantId.Should().NotBe(Guid.Empty);
+        betaTenantId.Should().NotBe(Guid.Empty);
 
         var marker = $"e2e-audit-isolation-{Guid.NewGuid():N}";
 

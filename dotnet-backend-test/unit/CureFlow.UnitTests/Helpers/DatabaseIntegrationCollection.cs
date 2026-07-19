@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Helpers;
 
 /// <summary>Serializes DB integration tests that mutate shared PostgreSQL state.</summary>
 [CollectionDefinition("DatabaseIntegration", DisableParallelization = true)]

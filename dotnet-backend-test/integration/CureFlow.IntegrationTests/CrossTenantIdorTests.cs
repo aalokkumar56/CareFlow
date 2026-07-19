@@ -4,7 +4,6 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using CureFlow.Application.Common;
-using CureFlow.Infrastructure.Persistence.Seeders;
 using FluentAssertions;
 using Xunit;
 
@@ -13,7 +12,7 @@ namespace CureFlow.IntegrationTests;
 /// <summary>
 /// Cross-tenant IDOR: a caller from tenant B must not read tenant A resources
 /// (404 via tenant-scoped queries, or 403 when JWT tenant_id is spoofed).
-/// Prefers MultiHospitalE2eSeeder logins; skips when seed/platform data is unavailable.
+/// Registers two hospitals per run so seed data is not required.
 /// </summary>
 public class CrossTenantIdorTests : IClassFixture<CustomWebApplicationFactory>
 {
@@ -27,16 +26,15 @@ public class CrossTenantIdorTests : IClassFixture<CustomWebApplicationFactory>
 
     public CrossTenantIdorTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task GetPatient_OfOtherTenant_Returns404()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
 
         var pair = await ResolveTenantPairAsync();
-        Skip.If(pair is null, "Multi-hospital e2e seed login unavailable.");
 
-        using var clientA = CreateAuthedClient(pair!.Value.AuthA.AccessToken);
-        using var clientB = CreateAuthedClient(pair.Value.AuthB.AccessToken);
+        using var clientA = CreateAuthedClient(pair.AuthA.AccessToken);
+        using var clientB = CreateAuthedClient(pair.AuthB.AccessToken);
 
         var patientId = await EnsurePatientAsync(clientA, $"Idor Victim {Guid.NewGuid():N}"[..28]);
         var getOwn = await clientA.GetAsync($"/api/patients/{patientId}");
@@ -51,19 +49,18 @@ public class CrossTenantIdorTests : IClassFixture<CustomWebApplicationFactory>
         body.Should().NotContain(patientName);
         body.Should().NotContain(patientId.ToString());
 
-        pair.Value.AuthA.TenantId.Should().NotBe(pair.Value.AuthB.TenantId);
+        pair.AuthA.TenantId.Should().NotBe(pair.AuthB.TenantId);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task ListPatients_DoesNotLeakOtherTenantPatient()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
 
         var pair = await ResolveTenantPairAsync();
-        Skip.If(pair is null, "Multi-hospital e2e seed login unavailable.");
 
-        using var clientA = CreateAuthedClient(pair!.Value.AuthA.AccessToken);
-        using var clientB = CreateAuthedClient(pair.Value.AuthB.AccessToken);
+        using var clientA = CreateAuthedClient(pair.AuthA.AccessToken);
+        using var clientB = CreateAuthedClient(pair.AuthB.AccessToken);
 
         var exclusiveName = $"Idor Exclusive {Guid.NewGuid():N}"[..28];
         var patientId = await EnsurePatientAsync(clientA, exclusiveName);
@@ -82,20 +79,19 @@ public class CrossTenantIdorTests : IClassFixture<CustomWebApplicationFactory>
         names.Should().NotContain(exclusiveName);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task JwtWithSpoofedTenantId_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
 
         var pair = await ResolveTenantPairAsync();
-        Skip.If(pair is null, "Multi-hospital e2e seed login unavailable.");
 
         // Real user from B, but tenant_id claim forged to A — TenantMiddleware must reject.
         var spoofed = TestJwtHelper.CreateToken(
-            userId: pair!.Value.AuthB.UserId,
-            tenantId: pair.Value.AuthA.TenantId,
+            userId: pair.AuthB.UserId,
+            tenantId: pair.AuthA.TenantId,
             permissions: CureFlowPermissions.All,
-            email: pair.Value.AuthB.Email,
+            email: pair.AuthB.Email,
             role: RoleNames.Admin);
 
         using var spoofClient = _factory.CreateClient();
@@ -122,17 +118,16 @@ public class CrossTenantIdorTests : IClassFixture<CustomWebApplicationFactory>
             .GetProperty("id").GetGuid();
     }
 
-    private async Task<(HospitalAuth AuthA, HospitalAuth AuthB)?> ResolveTenantPairAsync()
+    private async Task<(HospitalAuth AuthA, HospitalAuth AuthB)> ResolveTenantPairAsync()
     {
-        var hospitalA = MultiHospitalE2eSeeder.Hospitals[0];
-        var hospitalB = MultiHospitalE2eSeeder.Hospitals[1];
+        using var authA = await IntegrationTestSupport.RegisterAndLoginHospitalAsync(_factory, "Idor Hospital A");
+        using var authB = await IntegrationTestSupport.RegisterAndLoginHospitalAsync(_factory, "Idor Hospital B");
 
-        var authA = await LoginAsync(hospitalA.AdminEmail, MultiHospitalE2eSeeder.DefaultPassword);
-        var authB = await LoginAsync(hospitalB.AdminEmail, MultiHospitalE2eSeeder.DefaultPassword);
-        if (authA is not null && authB is not null)
-            return (authA, authB);
-
-        return null;
+        var userA = await LoginAsync(authA.Email, authA.Password);
+        var userB = await LoginAsync(authB.Email, authB.Password);
+        userA.Should().NotBeNull("hospital A must login after register/activate");
+        userB.Should().NotBeNull("hospital B must login after register/activate");
+        return (userA!, userB!);
     }
 
     private async Task<HospitalAuth?> LoginAsync(string email, string password)

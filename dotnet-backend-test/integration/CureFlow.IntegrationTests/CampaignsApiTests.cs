@@ -27,7 +27,7 @@ public class CampaignsApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public CampaignsApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Campaigns_Endpoints_RequireAuth()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -49,7 +49,7 @@ public class CampaignsApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Create_List_Preview_Schedule_And_Delete_Campaign()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -134,7 +134,7 @@ public class CampaignsApiTests : IClassFixture<CustomWebApplicationFactory>
         delete.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task PreviewAudience_IsScopedToCurrentTenantPatients()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

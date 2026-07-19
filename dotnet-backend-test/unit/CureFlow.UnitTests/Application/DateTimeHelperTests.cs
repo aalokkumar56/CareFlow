@@ -2,7 +2,7 @@ using CureFlow.Application.Common;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Application;
 
 /// <summary>UTC normalization used when Tasks (and others) persist DueAt / timestamptz.</summary>
 public class DateTimeHelperTests

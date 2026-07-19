@@ -10,7 +10,7 @@ using Moq;
 using Npgsql;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>Service-level API isolation tests for tenant-scoped endpoints.</summary>
 public class TenantApiIsolationTests
@@ -18,14 +18,13 @@ public class TenantApiIsolationTests
     [Fact]
     public async Task HospitalProfile_Get_IsScopedToCurrentTenant()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        var connectionString = TestDbConnection.Require();
+        await TestSeedHelper.EnsureMultiHospitalAsync(connectionString);
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var (alphaId, betaId) = await ResolveE2eTenantIdsAsync(dataSource);
-        if (alphaId == Guid.Empty || betaId == Guid.Empty)
-            return;
+        alphaId.Should().NotBe(Guid.Empty);
+        betaId.Should().NotBe(Guid.Empty);
 
         var alphaCtx = new CurrentTenant { TenantId = alphaId, IsAuthenticated = true };
         var alphaSession = new CureFlowDbSession(dataSource, alphaCtx);
@@ -48,18 +47,16 @@ public class TenantApiIsolationTests
     [Fact]
     public async Task Appointment_Get_ThrowsNotFound_ForOtherTenantAppointment()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        var connectionString = TestDbConnection.Require();
+        await TestSeedHelper.EnsureMultiHospitalAsync(connectionString);
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var (alphaId, betaId) = await ResolveE2eTenantIdsAsync(dataSource);
-        if (alphaId == Guid.Empty || betaId == Guid.Empty)
-            return;
+        alphaId.Should().NotBe(Guid.Empty);
+        betaId.Should().NotBe(Guid.Empty);
 
         var alphaAppointmentId = await FindAppointmentIdAsync(dataSource, alphaId);
-        if (alphaAppointmentId == Guid.Empty)
-            return;
+        alphaAppointmentId.Should().NotBe(Guid.Empty, "multi-hospital seed must include an appointment for Althan");
 
         var betaCtx = new CurrentTenant { TenantId = betaId, IsAuthenticated = true };
         var betaSession = new CureFlowDbSession(dataSource, betaCtx);
@@ -72,18 +69,16 @@ public class TenantApiIsolationTests
     [Fact]
     public async Task Conversation_Get_ThrowsNotFound_ForOtherTenantConversation()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        var connectionString = TestDbConnection.Require();
+        await TestSeedHelper.EnsureMultiHospitalAsync(connectionString);
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var (alphaId, betaId) = await ResolveE2eTenantIdsAsync(dataSource);
-        if (alphaId == Guid.Empty || betaId == Guid.Empty)
-            return;
+        alphaId.Should().NotBe(Guid.Empty);
+        betaId.Should().NotBe(Guid.Empty);
 
         var alphaConversationId = await FindConversationIdAsync(dataSource, alphaId);
-        if (alphaConversationId == Guid.Empty)
-            return;
+        alphaConversationId.Should().NotBe(Guid.Empty, "multi-hospital seed must include a conversation for Althan");
 
         var betaCtx = new CurrentTenant { TenantId = betaId, IsAuthenticated = true };
         var betaSession = new CureFlowDbSession(dataSource, betaCtx);

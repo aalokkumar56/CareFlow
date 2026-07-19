@@ -18,7 +18,7 @@ public class JwtSecurityTests : IClassFixture<CustomWebApplicationFactory>
 
     public JwtSecurityTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task ProtectedEndpoint_WithTamperedToken_ReturnsUnauthorized()
     {
         await using var host = IntegrationTestHelpers.CreateHostOrSkip(_factory, TestJwtHelper.JwtConfigOverrides());
@@ -36,7 +36,7 @@ public class JwtSecurityTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task ProtectedEndpoint_WithExpiredToken_ReturnsUnauthorized()
     {
         await using var host = IntegrationTestHelpers.CreateHostOrSkip(_factory, TestJwtHelper.JwtConfigOverrides());
@@ -56,7 +56,7 @@ public class JwtSecurityTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task ProtectedEndpoint_WithWrongAudience_ReturnsUnauthorized()
     {
         await using var host = IntegrationTestHelpers.CreateHostOrSkip(_factory, TestJwtHelper.JwtConfigOverrides());

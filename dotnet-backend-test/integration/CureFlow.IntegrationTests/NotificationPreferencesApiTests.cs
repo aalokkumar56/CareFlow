@@ -16,7 +16,7 @@ public class NotificationPreferencesApiTests : IClassFixture<CustomWebApplicatio
 
     public NotificationPreferencesApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_notification_preferences_without_auth_returns_unauthorized()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -26,7 +26,7 @@ public class NotificationPreferencesApiTests : IClassFixture<CustomWebApplicatio
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_notification_preferences_with_auth_returns_ok_array()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -45,7 +45,7 @@ public class NotificationPreferencesApiTests : IClassFixture<CustomWebApplicatio
         first.TryGetProperty("can_configure", out _).Should().BeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Put_api_notification_preferences_then_reset_returns_no_content()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -86,7 +86,7 @@ public class NotificationPreferencesApiTests : IClassFixture<CustomWebApplicatio
         reset.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_notification_preferences_role_defaults_requires_auth()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -96,7 +96,7 @@ public class NotificationPreferencesApiTests : IClassFixture<CustomWebApplicatio
         unauth.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_notification_preferences_role_defaults_with_owner_returns_ok()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

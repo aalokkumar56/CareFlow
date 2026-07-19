@@ -16,7 +16,7 @@ public class EmailSettingsApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public EmailSettingsApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_settings_email_status_without_auth_returns_unauthorized()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -26,7 +26,7 @@ public class EmailSettingsApiTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_settings_email_without_auth_returns_unauthorized()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -36,7 +36,7 @@ public class EmailSettingsApiTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_settings_email_status_with_auth_returns_status_shape()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -52,7 +52,7 @@ public class EmailSettingsApiTests : IClassFixture<CustomWebApplicationFactory>
             .Should().Be("Email is not configured. Add SMTP settings under Settings → Integrations.");
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_settings_email_with_auth_returns_defaults_or_settings()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -68,7 +68,7 @@ public class EmailSettingsApiTests : IClassFixture<CustomWebApplicationFactory>
         body.GetProperty("send_with_whatsapp").GetBoolean().Should().BeTrue();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Post_api_settings_email_saves_and_masks_password()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

@@ -5,7 +5,7 @@ using FluentAssertions;
 using Moq;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>
 /// Tag aggregation helpers: JSON parse, trim, ignore blanks/invalid rows, count + top-100.

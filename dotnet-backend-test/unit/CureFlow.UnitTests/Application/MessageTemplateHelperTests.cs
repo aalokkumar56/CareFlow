@@ -2,7 +2,7 @@ using CureFlow.Application.Common;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Application;
 
 /// <summary>Template body rendering used by quick templates / appointment messages.</summary>
 public class MessageTemplateHelperTests

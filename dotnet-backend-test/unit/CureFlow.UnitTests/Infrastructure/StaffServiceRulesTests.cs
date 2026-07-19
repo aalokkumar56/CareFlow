@@ -8,7 +8,7 @@ using FluentAssertions;
 using Moq;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>Staff profile creation is limited to clinical/front-desk roles.</summary>
 public class StaffServiceRulesTests

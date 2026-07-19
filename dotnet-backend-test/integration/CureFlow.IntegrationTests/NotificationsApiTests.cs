@@ -16,7 +16,7 @@ public class NotificationsApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public NotificationsApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_notifications_without_auth_returns_unauthorized()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -26,7 +26,7 @@ public class NotificationsApiTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_notifications_unread_count_without_auth_returns_unauthorized()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -36,7 +36,7 @@ public class NotificationsApiTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_notifications_with_auth_returns_ok_array()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -49,7 +49,7 @@ public class NotificationsApiTests : IClassFixture<CustomWebApplicationFactory>
         body.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_notifications_unread_count_with_auth_returns_count()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -62,7 +62,7 @@ public class NotificationsApiTests : IClassFixture<CustomWebApplicationFactory>
         body.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(0);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Post_api_notifications_mark_all_read_returns_no_content()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -72,7 +72,7 @@ public class NotificationsApiTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Patch_and_delete_unknown_notification_returns_not_found()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

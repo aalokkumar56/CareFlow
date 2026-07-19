@@ -28,7 +28,7 @@ public class AuditLogsApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public AuditLogsApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task List_RequiresAuth()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -39,7 +39,7 @@ public class AuditLogsApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task List_WithoutAuditView_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -50,7 +50,7 @@ public class AuditLogsApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task List_ReturnsOk_AndRespectsLimit_ForHospitalAdmin()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -86,7 +86,7 @@ public class AuditLogsApiTests : IClassFixture<CustomWebApplicationFactory>
         actions.Should().Contain("patient.create");
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task List_DoesNotExposeOtherTenantPatientCreateAction()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

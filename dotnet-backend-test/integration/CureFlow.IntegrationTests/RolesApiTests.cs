@@ -30,7 +30,7 @@ public class RolesApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public RolesApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Int510_ListRoles_RequiresAuth()
     {
         await using var host = CreateAuthHost();
@@ -39,7 +39,7 @@ public class RolesApiTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int510_ListRoles_IncludesSeededRoleNames()
     {
         await using var host = CreateHostOrSkip();
@@ -60,7 +60,7 @@ public class RolesApiTests : IClassFixture<CustomWebApplicationFactory>
         names.Should().Contain(RoleNames.Receptionist);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int511_512_513_CreateUpdateAndDeleteCustomRole()
     {
         await using var host = CreateHostOrSkip();
@@ -98,7 +98,7 @@ public class RolesApiTests : IClassFixture<CustomWebApplicationFactory>
             .Should().BeFalse();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int528_DeleteSystemRole_IsRejected()
     {
         await using var host = CreateHostOrSkip();
@@ -110,7 +110,7 @@ public class RolesApiTests : IClassFixture<CustomWebApplicationFactory>
         delete.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int514_ListPermissionsCatalog_ContainsCureFlowPermissions()
     {
         await using var host = CreateHostOrSkip();
@@ -195,8 +195,7 @@ public class RolesApiTests : IClassFixture<CustomWebApplicationFactory>
 
     private WebApplicationFactory<Program> CreateHostOrSkip()
     {
-        var connectionString = IntegrationDb.ResolveConnectionString();
-        Skip.If(connectionString is null, IntegrationTestHelpers.NoDatabaseReason);
+        var connectionString = IntegrationTestHelpers.RequireConnectionString();
         return CreateConfiguredHost(connectionString);
     }
 

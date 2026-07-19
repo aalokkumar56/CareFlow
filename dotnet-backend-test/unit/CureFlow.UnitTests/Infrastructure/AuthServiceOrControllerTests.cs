@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>
 /// Unit tests for <see cref="AuthService"/> (controllers are thin wrappers).
@@ -363,10 +363,4 @@ public class AuthHttpIntegrationCases
      * GET /api/platform/auth/setup-status
      *   - NeedsSetup true/false without auth
      */
-
-    [Fact(Skip = "Requires WebApplicationFactory + API host — place under CureFlow.IntegrationTests.")]
-    public void Http_auth_login_register_and_platform_bootstrap_documented_for_integration()
-    {
-        // Intentionally empty: keeps the HTTP surface discoverable from the UnitTest project.
-    }
 }

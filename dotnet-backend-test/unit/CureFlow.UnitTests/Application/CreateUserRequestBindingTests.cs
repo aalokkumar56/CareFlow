@@ -6,7 +6,7 @@ using CureFlow.Domain.Enums;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Application;
 
 public class CreateUserRequestBindingTests
 {

@@ -25,7 +25,7 @@ public class DashboardApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public DashboardApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Dashboard_Endpoints_RequireAuth()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -40,7 +40,7 @@ public class DashboardApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Overview_And_MissedRevenue_WithoutDashboardView_Return403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -53,7 +53,7 @@ public class DashboardApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task ClinicalOverview_WithoutAppointmentOrClinicalView_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -65,7 +65,7 @@ public class DashboardApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Overview_ReturnsExpectedShape_ForHospitalAdmin()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -86,7 +86,7 @@ public class DashboardApiTests : IClassFixture<CustomWebApplicationFactory>
         body.GetProperty("conversion_rate").GetDouble().Should().BeGreaterThanOrEqualTo(0);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task ClinicalOverview_And_MissedRevenue_ReturnOk_ForHospitalAdmin()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

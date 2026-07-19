@@ -6,7 +6,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 public class JwtTokenServiceTests
 {

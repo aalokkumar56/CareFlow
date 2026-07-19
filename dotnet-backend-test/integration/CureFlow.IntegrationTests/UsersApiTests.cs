@@ -30,7 +30,7 @@ public class UsersApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public UsersApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Int500_ListUsers_RequiresAuth()
     {
         await using var host = CreateAuthHost();
@@ -39,7 +39,7 @@ public class UsersApiTests : IClassFixture<CustomWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int500_501_502_503_ListGetCreateUpdate_User()
     {
         await using var host = CreateHostOrSkip();
@@ -81,7 +81,7 @@ public class UsersApiTests : IClassFixture<CustomWebApplicationFactory>
         updated.GetProperty("name").GetString().Should().Contain("Updated");
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int504_505_506_DisableEnableAndResetPassword()
     {
         await using var host = CreateHostOrSkip();
@@ -127,7 +127,7 @@ public class UsersApiTests : IClassFixture<CustomWebApplicationFactory>
         loginNew.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int507_508_509_AssignRolesPermissionsAndDelete()
     {
         await using var host = CreateHostOrSkip();
@@ -170,7 +170,7 @@ public class UsersApiTests : IClassFixture<CustomWebApplicationFactory>
         getBody.GetProperty("is_active").GetBoolean().Should().BeFalse();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Int525_ListUsers_FiltersByQueryAndActive()
     {
         await using var host = CreateHostOrSkip();
@@ -266,8 +266,7 @@ public class UsersApiTests : IClassFixture<CustomWebApplicationFactory>
 
     private WebApplicationFactory<Program> CreateHostOrSkip()
     {
-        var connectionString = IntegrationDb.ResolveConnectionString();
-        Skip.If(connectionString is null, IntegrationTestHelpers.NoDatabaseReason);
+        var connectionString = IntegrationTestHelpers.RequireConnectionString();
         return CreateConfiguredHost(connectionString);
     }
 

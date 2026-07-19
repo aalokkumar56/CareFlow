@@ -9,7 +9,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Moq;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>
 /// Dashboard missed-revenue loss helpers (default ₹ amounts + consultation fee override).
@@ -87,7 +87,7 @@ public class DashboardMissedRevenueTests
                 It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[]
             {
-                new TaskItem { Id = Guid.NewGuid(), Status = Domain.Enums.TaskStatus.Pending, DueAt = DateTime.UtcNow.AddDays(-1) },
+                new TaskItem { Id = Guid.NewGuid(), Status = CureFlow.Domain.Enums.TaskStatus.Pending, DueAt = DateTime.UtcNow.AddDays(-1) },
             });
         db.Setup(x => x.QueryAsync<Patient>(
                 It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))

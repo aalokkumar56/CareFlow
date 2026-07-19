@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>
 /// Media policy edges plus path/filename safety for the WhatsApp media store.

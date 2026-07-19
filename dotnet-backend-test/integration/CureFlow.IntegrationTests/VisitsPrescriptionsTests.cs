@@ -27,7 +27,7 @@ public class VisitsPrescriptionsTests : IClassFixture<CustomWebApplicationFactor
 
     public VisitsPrescriptionsTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Visits_And_Prescriptions_RequireAuth()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -45,7 +45,7 @@ public class VisitsPrescriptionsTests : IClassFixture<CustomWebApplicationFactor
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task CreateVisit_Update_Complete_And_Prescription_RoundTrip()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

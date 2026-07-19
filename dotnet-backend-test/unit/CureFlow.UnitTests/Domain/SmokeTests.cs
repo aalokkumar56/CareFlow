@@ -3,7 +3,7 @@ using CureFlow.Domain.Enums;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Domain;
 
 public class SmokeTests
 {

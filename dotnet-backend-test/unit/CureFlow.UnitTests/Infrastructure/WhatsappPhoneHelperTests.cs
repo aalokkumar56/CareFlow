@@ -2,7 +2,7 @@ using CureFlow.Infrastructure.External;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 public class WhatsappPhoneHelperTests
 {

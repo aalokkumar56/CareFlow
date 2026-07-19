@@ -3,7 +3,7 @@ using CureFlow.Application.Options;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Application;
 
 public class WhatsappMediaPolicyTests
 {

@@ -3,23 +3,25 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using CureFlow.Infrastructure.Identity;
+using CureFlow.Infrastructure.Persistence.Seeders;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
+using Npgsql;
 using Xunit;
 
 namespace CureFlow.IntegrationTests;
 
 /// <summary>
 /// Platform tenant lifecycle: register → approve → suspend → activate.
-/// Skips when no test database is available (CUREFLOW_TEST_CONNECTION or local appsettings).
+/// Requires a reachable test database (CUREFLOW_TEST_CONNECTION or local appsettings).
 /// </summary>
 public class PlatformTenantLifecycleTests : IClassFixture<CustomWebApplicationFactory>
 {
     // Matches PlatformUserSeeder defaults used by local/E2E ops login.
-    private const string PlatformEmail = "ops@cureflow.in";
-    private const string PlatformPassword = "OpsAdmin123!";
-    private const string PlatformName = "CureFlow Ops";
+    private const string PlatformEmail = PlatformUserSeeder.DefaultEmail;
+    private const string PlatformPassword = PlatformUserSeeder.DefaultPassword;
+    private const string PlatformName = PlatformUserSeeder.DefaultName;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -31,10 +33,10 @@ public class PlatformTenantLifecycleTests : IClassFixture<CustomWebApplicationFa
 
     public PlatformTenantLifecycleTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task RegisterApproveSuspendActivate_TransitionsLifecycleStatus()
     {
-        await using var host = CreateHostOrSkip();
+        await using var host = CreateHost();
 
         var client = host.CreateClient();
         var platformToken = await EnsurePlatformTokenAsync(client);
@@ -81,10 +83,10 @@ public class PlatformTenantLifecycleTests : IClassFixture<CustomWebApplicationFa
         activateBody.GetProperty("lifecycle_status").GetString().Should().Be("Active");
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task PlatformTenants_List_RequiresPlatformAuth()
     {
-        await using var host = CreateHostOrSkip();
+        await using var host = CreateHost();
 
         var client = host.CreateClient();
         var anonymous = await client.GetAsync("/api/platform/tenants");
@@ -97,8 +99,39 @@ public class PlatformTenantLifecycleTests : IClassFixture<CustomWebApplicationFa
         authorized.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    private static async Task EnsurePlatformOpsCredentialsAsync()
+    {
+        var cs = IntegrationTestHelpers.RequireConnectionString();
+        var hash = new BcryptPasswordHasher().Hash(PlatformPassword);
+
+        await using var conn = new NpgsqlConnection(cs);
+        await conn.OpenAsync();
+
+        await using var upsert = new NpgsqlCommand(
+            """
+            INSERT INTO "PlatformUsers"
+              ("Id", "Name", "Email", "PasswordHash", "IsActive", "IsDeleted", "CreatedAt", "UpdatedAt")
+            VALUES
+              (@id, @name, @email, @hash, true, false, NOW(), NOW())
+            ON CONFLICT ("Email") DO UPDATE
+              SET "PasswordHash" = EXCLUDED."PasswordHash",
+                  "IsActive" = true,
+                  "IsDeleted" = false,
+                  "UpdatedAt" = NOW()
+            """,
+            conn);
+        // PlatformUsers unique index is on Email; use lowercase to match seeder.
+        upsert.Parameters.AddWithValue("id", Guid.NewGuid());
+        upsert.Parameters.AddWithValue("name", PlatformName);
+        upsert.Parameters.AddWithValue("email", PlatformEmail.ToLowerInvariant());
+        upsert.Parameters.AddWithValue("hash", hash);
+        await upsert.ExecuteNonQueryAsync();
+    }
+
     private static async Task<string> EnsurePlatformTokenAsync(HttpClient client)
     {
+        await EnsurePlatformOpsCredentialsAsync();
+
         var statusResponse = await client.GetAsync("/api/platform/auth/setup-status");
         statusResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var status = await statusResponse.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
@@ -127,14 +160,13 @@ public class PlatformTenantLifecycleTests : IClassFixture<CustomWebApplicationFa
                 }));
         }
 
-        if (authResponse.StatusCode != HttpStatusCode.OK)
-        {
-            Skip.If(
-                true,
-                "Platform ops credentials unavailable in test DB (needs matching seed/bootstrap user).");
-        }
+        var bodyText = await authResponse.Content.ReadAsStringAsync();
+        authResponse.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            "platform auth must succeed with seeded ops credentials. Body: {0}",
+            bodyText);
 
-        var body = await authResponse.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
+        var body = JsonSerializer.Deserialize<JsonElement>(bodyText, JsonOptions);
         var token = body.GetProperty("access_token").GetString();
         token.Should().NotBeNullOrWhiteSpace();
         return token!;
@@ -143,6 +175,6 @@ public class PlatformTenantLifecycleTests : IClassFixture<CustomWebApplicationFa
     private static StringContent JsonContent(object payload) =>
         new(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
 
-    private WebApplicationFactory<Program> CreateHostOrSkip() =>
-        IntegrationTestHelpers.CreateHostOrSkip(_factory);
+    private WebApplicationFactory<Program> CreateHost() =>
+        IntegrationTestHelpers.CreateHost(_factory);
 }

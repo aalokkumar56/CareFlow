@@ -27,7 +27,7 @@ public class ClinicalApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public ClinicalApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Clinical_Endpoints_RequireAuth()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -43,7 +43,7 @@ public class ClinicalApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Vitals_Notes_And_History_RoundTrip_ForTenantPatient()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -132,7 +132,7 @@ public class ClinicalApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task AddVitals_WithInvalidPayload_ReturnsBadRequest()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

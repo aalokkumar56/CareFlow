@@ -2,7 +2,7 @@ using CureFlow.Application.Common;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Application;
 
 public class TenantTimeHelperTests
 {

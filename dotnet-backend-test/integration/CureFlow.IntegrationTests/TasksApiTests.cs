@@ -26,7 +26,7 @@ public class TasksApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public TasksApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Tasks_Endpoints_RequireAuth()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -47,7 +47,7 @@ public class TasksApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Tasks_WithoutDashboardView_Return403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -63,7 +63,7 @@ public class TasksApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Create_List_Patch_And_Delete_Task()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -127,7 +127,7 @@ public class TasksApiTests : IClassFixture<CustomWebApplicationFactory>
         afterIds.Should().NotContain(taskId);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Patch_OtherTenantTask_ReturnsNotFound()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

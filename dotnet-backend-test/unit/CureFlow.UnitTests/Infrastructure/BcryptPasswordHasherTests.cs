@@ -2,7 +2,7 @@ using CureFlow.Infrastructure.Identity;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 public class BcryptPasswordHasherTests
 {

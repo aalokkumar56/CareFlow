@@ -28,7 +28,7 @@ public class ReferralsApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public ReferralsApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Referrals_Endpoints_RequireAuth()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -44,7 +44,7 @@ public class ReferralsApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Analytics_WithoutReferralView_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -55,7 +55,7 @@ public class ReferralsApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Create_WithoutReferralManage_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -69,7 +69,7 @@ public class ReferralsApiTests : IClassFixture<CustomWebApplicationFactory>
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task CreateReferral_And_Analytics_ForHospitalAdmin()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

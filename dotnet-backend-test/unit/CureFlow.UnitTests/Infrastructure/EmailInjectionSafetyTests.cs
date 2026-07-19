@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>
 /// Safe-string / injection edges for outbound email (CRLF header injection, malformed recipients).
@@ -51,7 +51,7 @@ public class EmailInjectionSafetyTests
         // Must not report a successful SMTP hand-off.
         db.Verify(
             x => x.UpdateAsync(
-                It.Is<EmailMessage>(m => m.Status == Domain.Enums.MessageStatus.Sent),
+                It.Is<EmailMessage>(m => m.Status == CureFlow.Domain.Enums.MessageStatus.Sent),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
@@ -75,7 +75,7 @@ public class EmailInjectionSafetyTests
         {
             db.Verify(
                 x => x.UpdateAsync(
-                    It.Is<EmailMessage>(m => m.Id == messageId && m.Status == Domain.Enums.MessageStatus.Sent),
+                    It.Is<EmailMessage>(m => m.Id == messageId && m.Status == CureFlow.Domain.Enums.MessageStatus.Sent),
                     It.IsAny<bool>(),
                     It.IsAny<CancellationToken>()),
                 Times.Never);

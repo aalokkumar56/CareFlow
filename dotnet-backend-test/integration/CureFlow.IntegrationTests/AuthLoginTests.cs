@@ -25,7 +25,7 @@ public class AuthLoginTests : IClassFixture<CustomWebApplicationFactory>
 
     public AuthLoginTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Login_WithValidCredentials_ReturnsAccessTokenAndMatchingEmail()
     {
         await using var host = CreateHostOrSkip();
@@ -58,7 +58,7 @@ public class AuthLoginTests : IClassFixture<CustomWebApplicationFactory>
         body.GetProperty("tenant").GetProperty("id").GetGuid().Should().NotBe(Guid.Empty);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Login_WithInvalidCredentials_ReturnsUnauthorized()
     {
         await using var host = CreateHostOrSkip();

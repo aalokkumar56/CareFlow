@@ -10,7 +10,7 @@ using FluentAssertions;
 using Moq;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>
 /// Service rules for roles/users: SuperAdmin is immutable, role names normalize,

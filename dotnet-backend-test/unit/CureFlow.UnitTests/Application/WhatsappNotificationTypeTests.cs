@@ -5,7 +5,7 @@ using CureFlow.Infrastructure.Identity;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Application;
 
 public class WhatsappNotificationTypeTests
 {

@@ -1,30 +1,37 @@
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
-using Xunit;
 
 namespace CureFlow.IntegrationTests;
 
 /// <summary>Shared helpers for API-host integration tests that need PostgreSQL.</summary>
 internal static class IntegrationTestHelpers
 {
-    public const string NoDatabaseReason = "Test database is not configured (ConnectionStrings:Default / CUREFLOW_TEST_DB).";
+    public const string NoDatabaseReason =
+        "Test database is not configured (ConnectionStrings:Default / CUREFLOW_TEST_CONNECTION).";
 
     public static string? ResolveTestConnectionString() => IntegrationDb.ResolveConnectionString();
 
-    /// <summary>Skip the current [SkippableFact] when no usable PostgreSQL connection is available.</summary>
-    public static void RequireDatabase(bool hasDatabase) =>
-        Skip.If(!hasDatabase, NoDatabaseReason);
+    public static string RequireConnectionString()
+    {
+        var cs = ResolveTestConnectionString();
+        if (cs is null)
+            throw new InvalidOperationException(NoDatabaseReason);
+        return cs;
+    }
 
-    /// <summary>
-    /// Builds a configured test host, or skips the test when the database is unavailable.
-    /// Requires the calling test to be marked <see cref="SkippableFactAttribute"/>.
-    /// </summary>
-    public static WebApplicationFactory<Program> CreateHostOrSkip(
+    /// <summary>Fails the test when no usable PostgreSQL connection is available.</summary>
+    public static void RequireDatabase(bool hasDatabase)
+    {
+        if (!hasDatabase)
+            throw new InvalidOperationException(NoDatabaseReason);
+    }
+
+    /// <summary>Builds a configured test host; requires a reachable PostgreSQL database.</summary>
+    public static WebApplicationFactory<Program> CreateHost(
         CustomWebApplicationFactory factory,
         IDictionary<string, string?>? extraConfig = null)
     {
-        var connectionString = ResolveTestConnectionString();
-        Skip.If(connectionString is null, NoDatabaseReason);
+        var connectionString = RequireConnectionString();
 
         var config = new Dictionary<string, string?>
         {
@@ -56,4 +63,10 @@ internal static class IntegrationTestHelpers
             });
         });
     }
+
+    /// <summary>Obsolete name kept as alias so call sites can be updated incrementally.</summary>
+    public static WebApplicationFactory<Program> CreateHostOrSkip(
+        CustomWebApplicationFactory factory,
+        IDictionary<string, string?>? extraConfig = null) =>
+        CreateHost(factory, extraConfig);
 }

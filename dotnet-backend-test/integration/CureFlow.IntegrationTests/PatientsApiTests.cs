@@ -27,7 +27,7 @@ public class PatientsApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public PatientsApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Patient_Crud_IsScopedToAuthenticatedTenant()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -87,7 +87,7 @@ public class PatientsApiTests : IClassFixture<CustomWebApplicationFactory>
         getDeleted.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Patient_Get_ReturnsNotFound_ForOtherTenant()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -120,7 +120,7 @@ public class PatientsApiTests : IClassFixture<CustomWebApplicationFactory>
         ownGet.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Patients_List_RequiresAuthentication()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

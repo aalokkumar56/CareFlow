@@ -10,25 +10,25 @@ Catalog of Cure-Flow backend unit + HTTP + security test scenarios.
 
 | Area | Files (approx) | Fact/Theory | Notes |
 |------|----------------|------------:|-------|
-| Smoke / domain basics | `SmokeTests.cs` | 2 | Enums, AuthResponse equality |
-| Multi-tenant auth & slugs | `MultiTenantAuthTests.cs` | 6 | Slug helpers + register/login JWT (DB) |
-| Multi-tenant DB isolation | `MultiTenantIsolationTests.cs` | 4 | Patient get/list isolation (DB) |
-| Tenant SQL filters | `TenantIsolationTests.cs` | 5 | `WhereActive_*` + cross-tenant get |
-| PostgreSQL RLS | `TenantRlsIsolationTests.cs` | 3 | Raw SQL + RLS context (DB) |
-| Service-level tenant API | `TenantApiIsolationTests.cs` | 3 | Hospital profile / appointment / conversation |
-| Audit log isolation | `AuditLogIsolationTests.cs` | 1 | Cross-tenant audit read blocked (DB) |
-| Time / appointment message format | `TenantTimeHelperTests.cs`, `AppointmentMessageTimeTests.cs` | 10 | IANA TZ helpers + template placeholders |
-| Notifications (service) | `NotificationServiceTests.cs` | 19 | RBAC, preferences, audience, publish, read paths |
-| WhatsApp notification types | `WhatsappNotificationTypeTests.cs` | 4 | Permission gating for inbound / escalation |
-| WhatsApp API service | `WhatsappApiServiceTests.cs` | 6 | Send validation, demo mode |
-| WhatsApp settings | `WhatsAppSettingsServiceTests.cs` | 6 | Status / provider / defaults |
-| WhatsApp webhook helpers | `WhatsappWebhookProcessorTests.cs` | 8 | Phone id extract, signature verify |
-| WhatsApp media policy | `WhatsappMediaPolicyTests.cs` | 10 | MIME / size / SVG reject |
-| WhatsApp phone helper | `WhatsappPhoneHelperTests.cs` | 3 | Normalize / display |
-| Email service | `EmailServiceTests.cs` | 8 | Status + send reject paths |
-| SSRF / safe remote URL | `SafeRemoteUrlTests.cs` | 15 | HTTPS, private IP, DNS, bounded stream |
-| Dapper / infra | `AnyArrayParameterTests.cs` | 3 | Array / jsonb parameter expansion |
-| Users / roles helpers | `CreateUserRequestBindingTests.cs`, `RoleNameRulesTests.cs` | 3 | Snake_case binding; protected `super_admin` |
+| Smoke / domain basics | `Domain/SmokeTests.cs` | 2 | Enums, AuthResponse equality |
+| Multi-tenant auth & slugs | `Infrastructure/MultiTenantAuthTests.cs` | 6 | Slug helpers + register/login JWT (DB) |
+| Multi-tenant DB isolation | `Infrastructure/MultiTenantIsolationTests.cs` | 4 | Patient get/list isolation (DB) |
+| Tenant SQL filters | `Infrastructure/TenantIsolationTests.cs` | 5 | `WhereActive_*` + cross-tenant get |
+| PostgreSQL RLS | `Infrastructure/TenantRlsIsolationTests.cs` | 3 | Raw SQL + RLS context (DB) |
+| Service-level tenant API | `Infrastructure/TenantApiIsolationTests.cs` | 3 | Hospital profile / appointment / conversation |
+| Audit log isolation | `Infrastructure/AuditLogIsolationTests.cs` | 1 | Cross-tenant audit read blocked (DB) |
+| Time / appointment message format | `Application/TenantTimeHelperTests.cs`, `Application/AppointmentMessageTimeTests.cs` | 10 | IANA TZ helpers + template placeholders |
+| Notifications (service) | `Infrastructure/NotificationServiceTests.cs` | 19 | RBAC, preferences, audience, publish, read paths |
+| WhatsApp notification types | `Application/WhatsappNotificationTypeTests.cs` | 4 | Permission gating for inbound / escalation |
+| WhatsApp API service | `Infrastructure/WhatsappApiServiceTests.cs` | 6 | Send validation, demo mode |
+| WhatsApp settings | `Infrastructure/WhatsAppSettingsServiceTests.cs` | 6 | Status / provider / defaults |
+| WhatsApp webhook helpers | `Infrastructure/WhatsappWebhookProcessorTests.cs` | 8 | Phone id extract, signature verify |
+| WhatsApp media policy | `Application/WhatsappMediaPolicyTests.cs` | 10 | MIME / size / SVG reject |
+| WhatsApp phone helper | `Infrastructure/WhatsappPhoneHelperTests.cs` | 3 | Normalize / display |
+| Email service | `Infrastructure/EmailServiceTests.cs` | 8 | Status + send reject paths |
+| SSRF / safe remote URL | `Application/SafeRemoteUrlTests.cs` | 15 | HTTPS, private IP, DNS, bounded stream |
+| Dapper / infra | `Infrastructure/AnyArrayParameterTests.cs` | 3 | Array / jsonb parameter expansion |
+| Users / roles helpers | `Application/CreateUserRequestBindingTests.cs`, `Application/RoleNameRulesTests.cs` | 3 | Snake_case binding; protected `super_admin` |
 | **Total existing** | **~21 test files** | **119** | **0** `WebApplicationFactory` HTTP suites |
 | IntegrationTest project | `integration/README.md` only | 0 | Placeholder; DB suites should relocate later |
 

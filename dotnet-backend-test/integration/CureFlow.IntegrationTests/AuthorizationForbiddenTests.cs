@@ -16,7 +16,7 @@ public class AuthorizationForbiddenTests : IClassFixture<CustomWebApplicationFac
 
     public AuthorizationForbiddenTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task GetPatients_WithoutPatientView_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -28,7 +28,7 @@ public class AuthorizationForbiddenTests : IClassFixture<CustomWebApplicationFac
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task PostPatients_WithoutPatientCreate_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -42,7 +42,7 @@ public class AuthorizationForbiddenTests : IClassFixture<CustomWebApplicationFac
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task GetCampaigns_WithoutCampaignView_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -54,7 +54,7 @@ public class AuthorizationForbiddenTests : IClassFixture<CustomWebApplicationFac
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task GetUsers_WithoutUserView_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -66,7 +66,7 @@ public class AuthorizationForbiddenTests : IClassFixture<CustomWebApplicationFac
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task PostAuthRegister_WithoutUserCreate_Returns403()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

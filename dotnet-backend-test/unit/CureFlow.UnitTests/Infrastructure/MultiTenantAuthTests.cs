@@ -14,7 +14,7 @@ using Moq;
 using Npgsql;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 public class TenantSlugHelperTests
 {
@@ -48,9 +48,7 @@ public class MultiTenantAuthTests
     [Fact]
     public async Task RegisterAndLogin_ReturnsMatchingTenantId_InJwtAndResponse()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        var connectionString = TestDbConnection.Require();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var systemTenant = new CurrentTenant();
@@ -82,9 +80,7 @@ public class MultiTenantAuthTests
     [Fact]
     public async Task RegisterThreeHospitals_ProducesDistinctSlugsAndTenantIds()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        var connectionString = TestDbConnection.Require();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var systemTenant = new CurrentTenant();
@@ -126,9 +122,7 @@ public class MultiTenantAuthTests
     [Fact]
     public async Task RegisterTenant_RejectsReservedSlug()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        var connectionString = TestDbConnection.Require();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var systemTenant = new CurrentTenant();

@@ -4,7 +4,7 @@ using FluentAssertions;
 using Xunit;
 using TaskStatusEnum = CureFlow.Domain.Enums.TaskStatus;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Application;
 
 /// <summary>Snake/Pascal enum parsing used by Tasks list status filter (and similar APIs).</summary>
 public class EnumParseHelperTests

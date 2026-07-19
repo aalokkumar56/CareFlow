@@ -205,7 +205,7 @@ This starts PostgreSQL + API. Frontend runs separately.
 
 ```
 dotnet-backend/
-├── CureFlow.sln                        # product projects only (no tests)
+├── CureFlow.sln                        # product + Tests folder (unit/integration)
 ├── docker-compose.yml
 ├── .env.example
 ├── README.md
@@ -282,19 +282,22 @@ dotnet-backend/
 
 ## 🧪 Testing
 
-Unit tests live in the sibling folder `dotnet-backend-test` (solution `CureFlow.UnitTest.sln`):
+Unit and integration tests live in the sibling folder `dotnet-backend-test`. Both projects are also nested under the **Tests** solution folder in `CureFlow.sln`.
+
+Standalone solutions (still supported):
 
 ```bash
 cd ../dotnet-backend-test
 dotnet test CureFlow.UnitTest.sln
+dotnet test CureFlow.IntegrationTest.sln
 ```
 
-Currently includes smoke and service unit tests. **Developer should add**:
-- AuthService.LoginAsync unit tests (with InMemory provider)
-- PatientService CRUD integration tests (Testcontainers + PostgreSQL) — under a future `CureFlow.IntegrationTest.sln`
-- Multi-tenancy isolation tests (User from tenant A cannot fetch patient from tenant B)
-- WhatsApp signature verification tests
-- Lifestyle upsert tests
+Or from the product solution:
+
+```bash
+dotnet test CureFlow.sln --filter "FullyQualifiedName~CureFlow.UnitTests"
+dotnet test CureFlow.sln --filter "FullyQualifiedName~CureFlow.IntegrationTests"
+```
 
 ---
 

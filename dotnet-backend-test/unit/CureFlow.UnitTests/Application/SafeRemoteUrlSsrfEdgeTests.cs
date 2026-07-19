@@ -3,7 +3,7 @@ using CureFlow.Application.Common;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Application;
 
 /// <summary>
 /// Additional SSRF edges for webhook-supplied media URLs and any server-side

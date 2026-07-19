@@ -12,7 +12,7 @@ using Microsoft.IdentityModel.Tokens;
 using Moq;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Api;
 
 /// <summary>
 /// JWT tenant claim issuance and TenantMiddleware mismatch handling

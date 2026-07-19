@@ -9,7 +9,7 @@ using Moq;
 using Xunit;
 using TaskStatusEnum = CureFlow.Domain.Enums.TaskStatus;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>Task create/list/update validation: UTC DueAt, status filter, not-found.</summary>
 public class TaskServiceValidationTests

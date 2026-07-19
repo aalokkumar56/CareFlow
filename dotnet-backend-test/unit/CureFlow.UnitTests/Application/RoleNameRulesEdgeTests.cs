@@ -2,7 +2,7 @@ using CureFlow.Application.Common;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Application;
 
 /// <summary>
 /// Edge cases beyond <see cref="RoleNameRulesTests"/>: null/empty, multi-space,

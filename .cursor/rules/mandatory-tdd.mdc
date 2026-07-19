@@ -24,6 +24,10 @@ Forbidden patterns that hide real failures:
 - Skip-stubs or placeholders that always pass
 - Catch-and-ignore that turns failures into success
 - Commenting out or `#if false` around failing asserts
+- **`[SkippableFact]` / `[SkippableTheory]` / `Skip.If` / `Xunit.SkippableFact`** — banned forever. Use `[Fact]` / `[Theory]` only.
+- **`[Fact(Skip = "...")]`** / soft-skip attributes — banned. Configure the test environment (connection strings, Testcontainers, seed, mocks) so the real outcome always runs.
+
+If a test needs PostgreSQL: require a connection string (fail loudly when missing) or convert to a pure unit test with mocks. Do not skip.
 
 Assert **one** correct outcome per scenario. Ambiguous “acceptable” ranges are not allowed.
 
@@ -47,3 +51,4 @@ When touching auth, APIs, webhooks, or user-controlled input, include failing-pa
 - [ ] Security negatives present where applicable
 - [ ] Scenario catalog updated if scope is new
 - [ ] Suite fails correctly before fix; passes after — no softened asserts
+- [ ] Zero `SkippableFact` / `Skip.If` / `Fact(Skip=` remaining (`rg` clean)

@@ -47,7 +47,7 @@ public class SsrfHospitalImportTests : IClassFixture<CustomWebApplicationFactory
         return Task.CompletedTask;
     }
 
-    [SkippableTheory]
+    [Theory]
     [InlineData("http://127.0.0.1/")]
     [InlineData("https://127.0.0.1/")]
     [InlineData("https://169.254.169.254/latest/meta-data/")]
@@ -76,7 +76,7 @@ public class SsrfHospitalImportTests : IClassFixture<CustomWebApplicationFactory
         body.GetProperty("error").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Import_WithoutAuth_ReturnsUnauthorized()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

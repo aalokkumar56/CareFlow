@@ -12,12 +12,12 @@ using Moq;
 using Npgsql;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 /// <summary>
 /// Service-level IDOR protections: when the session layer hides cross-tenant rows
 /// (GetById / tenant-filtered query returns null), services must fail closed with NotFound.
-/// DB-backed cases skip when CUREFLOW_TEST_CONNECTION is unset.
+/// DB-backed cases require a configured test database (CUREFLOW_TEST_CONNECTION or Api appsettings).
 /// </summary>
 public class CrossTenantIdorServiceTests
 {
@@ -131,9 +131,8 @@ public class CrossTenantIdorServiceTests
     [Fact]
     public async Task DbSession_GetById_ReturnsNull_ForCrossTenantPatient_WhenSeeded()
     {
-        var connectionString = TestDbConnection.Resolve();
-        if (connectionString is null)
-            return;
+        var connectionString = TestDbConnection.Require();
+        await TestSeedHelper.EnsureMultiHospitalAsync(connectionString);
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
 
@@ -159,8 +158,9 @@ public class CrossTenantIdorServiceTests
                 new { tenantId = alphaTenantId, name = "Althan Exclusive Patient" });
         }
 
-        if (alphaTenantId == Guid.Empty || betaTenantId == Guid.Empty || alphaPatientId == Guid.Empty)
-            return;
+        alphaTenantId.Should().NotBe(Guid.Empty);
+        betaTenantId.Should().NotBe(Guid.Empty);
+        alphaPatientId.Should().NotBe(Guid.Empty);
 
         var betaSession = new CureFlowDbSession(dataSource, new CurrentTenant
         {

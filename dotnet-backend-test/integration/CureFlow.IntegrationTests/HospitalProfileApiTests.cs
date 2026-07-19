@@ -17,7 +17,7 @@ public class HospitalProfileApiTests : IClassFixture<CustomWebApplicationFactory
 
     public HospitalProfileApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_hospital_profile_without_auth_returns_unauthorized()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -27,7 +27,7 @@ public class HospitalProfileApiTests : IClassFixture<CustomWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_hospital_profile_departments_without_auth_returns_unauthorized()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -37,7 +37,7 @@ public class HospitalProfileApiTests : IClassFixture<CustomWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_hospital_profile_with_auth_returns_profile()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -53,7 +53,7 @@ public class HospitalProfileApiTests : IClassFixture<CustomWebApplicationFactory
         departments.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Get_api_hospital_profile_departments_with_auth_returns_ok_array()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -66,7 +66,7 @@ public class HospitalProfileApiTests : IClassFixture<CustomWebApplicationFactory
         body.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Put_api_hospital_profile_updates_tagline_and_returns_ok()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

@@ -27,7 +27,7 @@ public class AppointmentsApiTests : IClassFixture<CustomWebApplicationFactory>
 
     public AppointmentsApiTests(CustomWebApplicationFactory factory) => _factory = factory;
 
-    [SkippableFact]
+    [Fact]
     public async Task Appointment_Crud_IsScopedToAuthenticatedTenant()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -107,7 +107,7 @@ public class AppointmentsApiTests : IClassFixture<CustomWebApplicationFactory>
         bookingOptions.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Appointment_Get_ReturnsNotFound_ForOtherTenant()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);
@@ -144,7 +144,7 @@ public class AppointmentsApiTests : IClassFixture<CustomWebApplicationFactory>
         ownGet.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Appointments_List_RequiresAuthentication()
     {
         IntegrationTestHelpers.RequireDatabase(_factory.HasDatabase);

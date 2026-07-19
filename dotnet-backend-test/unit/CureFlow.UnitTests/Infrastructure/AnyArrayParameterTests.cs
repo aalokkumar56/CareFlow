@@ -5,7 +5,7 @@ using Dapper;
 using FluentAssertions;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 // Regression guard for Npgsql error 42809 ("op ANY/ALL (array) requires array on right side").
 //

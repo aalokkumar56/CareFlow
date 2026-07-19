@@ -24,7 +24,7 @@ internal static class IntegrationTestSupport
     internal static WebApplicationFactory<Program> CreateHostOrSkip(
         CustomWebApplicationFactory factory,
         IDictionary<string, string?>? extraConfig = null) =>
-        IntegrationTestHelpers.CreateHostOrSkip(factory, extraConfig);
+        IntegrationTestHelpers.CreateHost(factory, extraConfig);
 
     /// <summary>
     /// Registers a hospital, marks it Active + onboarded in DB, then returns an authenticated client.

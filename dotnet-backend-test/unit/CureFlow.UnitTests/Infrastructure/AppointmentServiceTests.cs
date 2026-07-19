@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
-namespace CureFlow.UnitTests;
+namespace CureFlow.UnitTests.Infrastructure;
 
 public class CreateAppointmentValidatorTests
 {
