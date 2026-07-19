@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "@/lib/navigation";
 import AppShell from "@/components/layout/AppShell";
 import PageContent from "@/components/glass/PageContent";
@@ -142,6 +142,34 @@ const Patients = () => {
   const openPreview = (patient) => setSelectedPatient(patient);
   const closePreview = () => setSelectedPatient(null);
   const openEdit = (patient) => navigate(`/patients/${patient.id}?edit=1`);
+  const rowClickTimerRef = useRef(null);
+
+  const openPatientDetail = useCallback((patientId) => {
+    if (rowClickTimerRef.current) {
+      clearTimeout(rowClickTimerRef.current);
+      rowClickTimerRef.current = null;
+    }
+    navigate(`/patients/${patientId}`);
+  }, [navigate]);
+
+  useEffect(() => () => {
+    if (rowClickTimerRef.current) clearTimeout(rowClickTimerRef.current);
+  }, []);
+
+  /** Delay single-click so a real double-click can win and open the profile. */
+  const handleRowClick = (patientId) => {
+    if (rowClickTimerRef.current) clearTimeout(rowClickTimerRef.current);
+    rowClickTimerRef.current = setTimeout(() => {
+      rowClickTimerRef.current = null;
+      navigate(`/patients/${patientId}`);
+    }, 280);
+  };
+
+  const handleRowDoubleClick = (e, patientId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openPatientDetail(patientId);
+  };
 
   const exportCsv = () => {
     if (!rows.length) {
@@ -402,14 +430,11 @@ const Patients = () => {
                         <tr
                           key={p.id}
                           data-testid={`patient-row-${p.id}`}
-                          title="Click for quick preview · Double-click for full profile"
-                          onClick={() => openPreview(p)}
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/patients/${p.id}`);
-                          }}
+                          title="Click or double-click to open patient profile"
+                          onClick={() => handleRowClick(p.id)}
+                          onDoubleClick={(e) => handleRowDoubleClick(e, p.id)}
                           className={cn(
-                            "border-b border-white/40 last:border-0 cursor-pointer transition-colors",
+                            "border-b border-white/40 last:border-0 cursor-pointer transition-colors select-none",
                             isSelected ? "bg-primary-soft hover:bg-[#064E3B]/10" : "hover:bg-white/30",
                           )}
                         >

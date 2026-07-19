@@ -55,6 +55,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Injection> Injections => Set<Injection>();
     public DbSet<VitalSigns> VitalSigns => Set<VitalSigns>();
     public DbSet<LabReport> LabReports => Set<LabReport>();
+    public DbSet<PatientDocument> PatientDocuments => Set<PatientDocument>();
     public DbSet<ClinicalNote> ClinicalNotes => Set<ClinicalNote>();
     public DbSet<MedicalHistoryItem> MedicalHistory => Set<MedicalHistoryItem>();
     public DbSet<FamilyHistoryItem> FamilyHistory => Set<FamilyHistoryItem>();

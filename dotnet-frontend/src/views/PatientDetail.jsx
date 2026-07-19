@@ -40,6 +40,8 @@ import Prescriptions from "@/components/ehr/Prescriptions";
 import Vitals from "@/components/ehr/Vitals";
 import { ClinicalNotes, MedicalHistory, FamilyHistory } from "@/components/ehr/ClinicalNotes";
 import Lifestyle from "@/components/ehr/Lifestyle";
+import VisitChart from "@/components/ehr/VisitChart";
+import PaperNoteUpload from "@/components/ehr/PaperNoteUpload";
 import { useConsultationSession } from "@/hooks/useConsultationSession";
 import { useAuth } from "@/lib/auth";
 import {
@@ -53,7 +55,8 @@ import {
 const PATIENT_TAB_TRIGGER =
   "rounded-lg data-[state=active]:bg-[#064E3B] data-[state=active]:text-white";
 
-const PatientBreadcrumb = ({ name }) => (
+/** Breadcrumb stays generic — patient name lives once in the page header. */
+const PatientBreadcrumb = () => (
   <Breadcrumb>
     <BreadcrumbList className="text-[13px] text-text-secondary">
       <BreadcrumbItem>
@@ -63,8 +66,8 @@ const PatientBreadcrumb = ({ name }) => (
       </BreadcrumbItem>
       <BreadcrumbSeparator className="text-text-muted" />
       <BreadcrumbItem>
-        <BreadcrumbPage className="font-heading font-semibold text-[#022C22] truncate max-w-[min(100vw-12rem,28rem)]">
-          {name}
+        <BreadcrumbPage className="font-heading font-semibold text-[#022C22]">
+          Profile
         </BreadcrumbPage>
       </BreadcrumbItem>
     </BreadcrumbList>
@@ -272,7 +275,7 @@ const PatientDetail = () => {
 
   if (!data) {
     return (
-      <AppShell breadcrumb={<PatientBreadcrumb name="Loading…" />} showDate={false} hideHeaderSearch hideHospitalBadge>
+      <AppShell breadcrumb={<PatientBreadcrumb />} showDate={false} hideHeaderSearch hideHospitalBadge>
         {null}
       </AppShell>
     );
@@ -284,7 +287,7 @@ const PatientDetail = () => {
   );
 
   return (
-    <AppShell breadcrumb={<PatientBreadcrumb name={p.name} />} showDate={false} hideHeaderSearch hideHospitalBadge>
+    <AppShell breadcrumb={<PatientBreadcrumb />} showDate={false} hideHeaderSearch hideHospitalBadge>
       <PageContent>
         <Link
           to="/patients"
@@ -386,7 +389,7 @@ const PatientDetail = () => {
                     )}
                   </div>
                   <p className="text-[12px] text-text-secondary mt-1">
-                    Document vitals, clinical notes, and prescription — then print for the patient.
+                    Document vitals, notes, prescription, and scan hardcopy paper notes — then print for the patient.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -420,6 +423,17 @@ const PatientDetail = () => {
                   >
                     New prescription
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl"
+                    data-testid="consultation-scan-paper"
+                    onClick={() => openConsultationTab("prescriptions")}
+                    disabled={!consultationReady}
+                  >
+                    Scan paper note
+                  </Button>
                   {canEditAppointment && (
                     <Button
                       type="button"
@@ -435,6 +449,15 @@ const PatientDetail = () => {
                   )}
                 </div>
               </div>
+
+              {consultationReady && consultationVisitId && (
+                <PaperNoteUpload
+                  patientId={id}
+                  visitId={consultationVisitId}
+                  testIdPrefix="consultation-paper-note"
+                  onUploaded={refreshHolistic}
+                />
+              )}
 
               {(consultationAppointment || p) && (
                 <div
@@ -483,9 +506,11 @@ const PatientDetail = () => {
             <TabsTrigger value="today" className={PATIENT_TAB_TRIGGER} data-testid="tab-today">
               <Sun weight="regular" className="w-3.5 h-3.5 mr-1" /> Today
             </TabsTrigger>
-            <TabsTrigger value="details" className={PATIENT_TAB_TRIGGER} data-testid="tab-details">
-              <User weight="regular" className="w-3.5 h-3.5 mr-1" /> Details
-            </TabsTrigger>
+            {canClinical && (
+              <TabsTrigger value="visit-chart" className={PATIENT_TAB_TRIGGER} data-testid="tab-visit-chart">
+                Visit chart
+              </TabsTrigger>
+            )}
             {canClinical && (
               <>
                 <TabsTrigger value="allergies" className={PATIENT_TAB_TRIGGER} data-testid="tab-allergies">
@@ -510,6 +535,9 @@ const PatientDetail = () => {
             )}
             <TabsTrigger value="timeline" className={PATIENT_TAB_TRIGGER} data-testid="tab-timeline">
               Timeline
+            </TabsTrigger>
+            <TabsTrigger value="details" className={PATIENT_TAB_TRIGGER} data-testid="tab-details">
+              <User weight="regular" className="w-3.5 h-3.5 mr-1" /> Details
             </TabsTrigger>
           </TabsList>
 
@@ -590,6 +618,15 @@ const PatientDetail = () => {
           <TabsContent value="lifestyle" className="mt-3">
             {activeTab === "lifestyle" && canClinical && (
               <Lifestyle patientId={id} />
+            )}
+          </TabsContent>
+          <TabsContent value="visit-chart" className="mt-3">
+            {activeTab === "visit-chart" && canClinical && (
+              <VisitChart
+                patientId={id}
+                hospitalTz={hospitalTz}
+                enabled={activeTab === "visit-chart"}
+              />
             )}
           </TabsContent>
           <TabsContent value="timeline" className="mt-3">

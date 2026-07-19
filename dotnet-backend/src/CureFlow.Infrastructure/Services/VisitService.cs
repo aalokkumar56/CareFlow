@@ -114,6 +114,101 @@ public class VisitService : IVisitService
             v.Symptoms, v.Diagnosis, v.FollowUpDate)).ToList();
     }
 
+    public async Task<IReadOnlyList<VisitChartCardDto>> GetVisitChartAsync(Guid patientId, CancellationToken ct = default)
+    {
+        if (await _db.GetByIdAsync<Patient>(patientId, ct: ct) is null)
+            throw new NotFoundException("Patient");
+
+        var visits = (await _db.QueryAsync<Visit>(
+            """SELECT * FROM "Visits" WHERE "PatientId" = @patientId ORDER BY "VisitDate" DESC""",
+            new { patientId }, ct: ct)).ToList();
+
+        var vitals = (await _db.QueryAsync<VitalSigns>(
+            """SELECT * FROM "VitalSigns" WHERE "PatientId" = @patientId ORDER BY "MeasuredAt" DESC""",
+            new { patientId }, ct: ct)).ToList();
+        var notes = (await _db.QueryAsync<ClinicalNote>(
+            """SELECT * FROM "ClinicalNotes" WHERE "PatientId" = @patientId ORDER BY "CreatedAt" DESC""",
+            new { patientId }, ct: ct)).ToList();
+        var prescriptions = (await PrescriptionGraphLoader.LoadAsync(
+            _db, @"""PatientId"" = @patientId", new { patientId },
+            """ORDER BY "PrescribedAt" DESC""", ct)).ToList();
+        var documents = (await _db.QueryAsync<PatientDocument>(
+            """SELECT * FROM "PatientDocuments" WHERE "PatientId" = @patientId ORDER BY "CapturedAt" DESC""",
+            new { patientId }, ct: ct)).ToList();
+
+        var visitById = visits.ToDictionary(v => v.Id);
+        var cardsByKey = new Dictionary<string, VisitChartCardBuilder>(StringComparer.Ordinal);
+
+        foreach (var visit in visits)
+        {
+            var key = VisitDateKey(visit.VisitDate) + "|" + visit.Id.ToString("N");
+            cardsByKey[key] = new VisitChartCardBuilder
+            {
+                VisitId = visit.Id,
+                VisitDate = visit.VisitDate,
+                VisitDateKey = VisitDateKey(visit.VisitDate),
+                DoctorName = visit.DoctorName,
+                Department = visit.Department,
+                ChiefComplaint = visit.ChiefComplaint ?? visit.Symptoms,
+                Diagnosis = visit.Diagnosis,
+                DoctorNotes = visit.DoctorNotes,
+                Status = visit.Status.ToString(),
+            };
+        }
+
+        void EnsureDayCard(DateTime when, string? doctorName = null)
+        {
+            var day = VisitDateKey(when);
+            var key = day + "|day";
+            if (cardsByKey.ContainsKey(key)) return;
+            // Prefer attaching to a visit on the same UTC calendar day when one exists.
+            var sameDayVisit = visits.FirstOrDefault(v => VisitDateKey(v.VisitDate) == day);
+            if (sameDayVisit != null) return;
+            cardsByKey[key] = new VisitChartCardBuilder
+            {
+                VisitId = null,
+                VisitDate = when,
+                VisitDateKey = day,
+                DoctorName = doctorName,
+                Status = "Record",
+            };
+        }
+
+        VisitChartCardBuilder? ResolveCard(Guid? visitId, DateTime when, string? doctorName = null)
+        {
+            if (visitId.HasValue && visitById.TryGetValue(visitId.Value, out var visit))
+            {
+                var key = VisitDateKey(visit.VisitDate) + "|" + visit.Id.ToString("N");
+                return cardsByKey[key];
+            }
+
+            var day = VisitDateKey(when);
+            var sameDayVisit = visits.FirstOrDefault(v => VisitDateKey(v.VisitDate) == day);
+            if (sameDayVisit != null)
+            {
+                var key = day + "|" + sameDayVisit.Id.ToString("N");
+                return cardsByKey[key];
+            }
+
+            EnsureDayCard(when, doctorName);
+            return cardsByKey[day + "|day"];
+        }
+
+        foreach (var v in vitals)
+            ResolveCard(v.VisitId, v.MeasuredAt, v.RecordedByName)?.Vitals.Add(MapVital(v));
+        foreach (var n in notes)
+            ResolveCard(n.VisitId, n.CreatedAt, n.AuthorName)?.Notes.Add(MapNote(n));
+        foreach (var rx in prescriptions)
+            ResolveCard(rx.VisitId, rx.PrescribedAt, rx.DoctorName)?.Prescriptions.Add(MapRx(rx));
+        foreach (var d in documents)
+            ResolveCard(d.VisitId, d.CapturedAt, d.UploadedByName)?.PaperNotes.Add(MapDocument(d));
+
+        return cardsByKey.Values
+            .OrderByDescending(c => c.VisitDate)
+            .Select(c => c.ToDto())
+            .ToList();
+    }
+
     public async Task UpdateAsync(Guid id, UpdateVisitRequest req, CancellationToken ct = default)
     {
         var visit = await _db.GetByIdAsync<Visit>(id, ct: ct)
@@ -345,6 +440,36 @@ public class VisitService : IVisitService
     {
         var invalid = Path.GetInvalidFileNameChars();
         return string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
+    }
+
+    private static string VisitDateKey(DateTime utc) =>
+        DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToString("yyyy-MM-dd");
+
+    private static PatientDocumentDto MapDocument(PatientDocument d) => new(
+        d.Id, d.PatientId, d.VisitId, d.AppointmentId, d.DocumentType, d.Title,
+        d.OriginalFileName, d.ContentType, d.FileSizeBytes, d.FileUrl,
+        d.UploadedByName, d.CapturedAt, d.CreatedAt);
+
+    private sealed class VisitChartCardBuilder
+    {
+        public Guid? VisitId { get; set; }
+        public DateTime VisitDate { get; set; }
+        public string VisitDateKey { get; set; } = "";
+        public string? DoctorName { get; set; }
+        public string? Department { get; set; }
+        public string? ChiefComplaint { get; set; }
+        public string? Diagnosis { get; set; }
+        public string? DoctorNotes { get; set; }
+        public string Status { get; set; } = "";
+        public List<VitalSignsDto> Vitals { get; } = new();
+        public List<ClinicalNoteDto> Notes { get; } = new();
+        public List<PrescriptionDto> Prescriptions { get; } = new();
+        public List<PatientDocumentDto> PaperNotes { get; } = new();
+
+        public VisitChartCardDto ToDto() => new(
+            VisitId, VisitDate, VisitDateKey, DoctorName, Department,
+            ChiefComplaint, Diagnosis, DoctorNotes, Status,
+            Vitals, Notes, Prescriptions, PaperNotes);
     }
 
     private static VitalSignsDto MapVital(VitalSigns v) => new(
