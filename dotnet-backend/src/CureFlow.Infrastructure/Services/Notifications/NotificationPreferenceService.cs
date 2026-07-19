@@ -33,7 +33,9 @@ public class NotificationPreferenceService(
             {
                 var canConfigure = NotificationRbac.HasAllPermissions(userPerms, def.RequiredPermissions);
                 var roleDefault = ResolveRoleDefault(def, roleName, roleDefaults);
-                userPrefs.TryGetValue(def.Code, out var userOverride);
+                // Missing dictionary key must stay null — bool TryGetValue defaults to false and would
+                // incorrectly override role/system defaults.
+                bool? userOverride = userPrefs.TryGetValue(def.Code, out var stored) ? stored : null;
                 var effective = NotificationPreferenceResolver.ResolveInAppEnabled(
                     canConfigure, userOverride, roleDefault, def.DefaultEnabled);
 
@@ -94,10 +96,23 @@ public class NotificationPreferenceService(
             }
             else
             {
-                existing.IsDeleted = false;
-                existing.Enabled = item.InAppEnabled;
-                existing.UpdatedAt = DateTime.UtcNow;
-                await db.UpdateAsync(existing, ct: ct);
+                // UpdateAsync WHERE requires IsDeleted=false, so soft-deleted rows must be
+                // undeleted via explicit SQL (reset-to-defaults soft-deletes overrides).
+                await db.ExecuteAsync(
+                    """
+                    UPDATE "NotificationPreferences"
+                    SET "Enabled" = @enabled,
+                        "IsDeleted" = false,
+                        "UpdatedAt" = @now
+                    WHERE "Id" = @id AND "TenantId" = @TenantId
+                    """,
+                    new
+                    {
+                        id = existing.Id,
+                        enabled = item.InAppEnabled,
+                        now = DateTime.UtcNow,
+                    },
+                    ct: ct);
             }
         }
     }
@@ -230,7 +245,7 @@ public class NotificationPreferenceService(
             return false;
 
         var userPrefs = await LoadUserPreferencesAsync(userId, ct);
-        userPrefs.TryGetValue(notificationType, out var userOverride);
+        bool? userOverride = userPrefs.TryGetValue(notificationType, out var stored) ? stored : null;
 
         var roleName = await GetPrimaryRoleNameAsync(userId, ct);
         var roleDefaults = await LoadRoleDefaultsForUserAsync(userId, ct);

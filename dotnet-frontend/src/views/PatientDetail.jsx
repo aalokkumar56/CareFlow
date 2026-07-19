@@ -88,6 +88,9 @@ const PatientDetail = () => {
   const [activeTab, setActiveTab] = useState("today");
   const [overlayPanel, setOverlayPanel] = useState(null);
   const [consultationAction, setConsultationAction] = useState(null);
+  const [waStatus, setWaStatus] = useState(null);
+  // Mirror Inbox: disable only after status resolves as inactive/unconfigured.
+  const whatsappDisabled = !!(waStatus && (!waStatus.enabled || !waStatus.is_configured));
 
   const applyPatientForm = useCallback((p) => {
     const gender = p.gender && String(p.gender).toLowerCase() !== "unknown" ? String(p.gender).toLowerCase() : "";
@@ -161,6 +164,13 @@ const PatientDetail = () => {
         if (canWhatsApp) {
           const tpl = await fetchTemplates({ signal });
           if (!signal.aborted) setTemplates(tpl);
+          api.get("/settings/whatsapp/status", { signal, skipGlobalLoader: true })
+            .then((r) => { if (!signal.aborted) setWaStatus(r.data); })
+            .catch(() => {
+              if (!signal.aborted) {
+                setWaStatus({ enabled: false, is_configured: false, message: "Unable to load WhatsApp status." });
+              }
+            });
         }
       } catch (e) {
         if (e?.code === "ERR_CANCELED" || signal.aborted) return;
@@ -601,6 +611,8 @@ const PatientDetail = () => {
                   patientId={id}
                   patientName={p.name}
                   templates={templates}
+                  whatsappDisabled={!!whatsappDisabled}
+                  disabledMessage={waStatus?.message}
                   className="h-full min-h-[480px]"
                 />
               </div>

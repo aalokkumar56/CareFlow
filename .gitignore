@@ -121,6 +121,7 @@ test_reports/
 
 screenshots/
 dotnet-frontend/e2e/screenshots/
+dotnet-frontend-test/e2e/screenshots/
 
 test_result.md
 test_reports/**/*.md

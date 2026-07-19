@@ -1,0 +1,20 @@
+{
+  "name": "dotnet-frontend-test",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cure-Flow frontend UI / Playwright e2e test application",
+  "scripts": {
+    "test": "playwright test",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:walkthrough": "playwright test e2e/comprehensive-human-walkthrough.spec.js --headed --workers=1 --grep \"admin\"",
+    "test:e2e:walkthrough:all": "playwright test e2e/comprehensive-human-walkthrough.spec.js --headed --workers=1 --grep \"all 6 roles\"",
+    "test:e2e:inputs": "playwright test e2e/all-input-fields.spec.js --workers=1",
+    "test:e2e:walkthrough:legacy": "playwright test e2e/human-site-walkthrough.spec.js --headed --workers=1",
+    "test:e2e:smoke": "playwright test e2e/smoke.spec.js",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}

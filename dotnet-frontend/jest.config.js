@@ -8,7 +8,7 @@ const createJestConfig = nextJest({
 const customJestConfig = {
   setupFilesAfterEnv: ["<rootDir>/src/setupTests.js"],
   testEnvironment: "jest-environment-jsdom",
-  testPathIgnorePatterns: ["<rootDir>/node_modules/", "<rootDir>/e2e/"],
+  testPathIgnorePatterns: ["<rootDir>/node_modules/"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
     "^@phosphor-icons/react$": "<rootDir>/src/__mocks__/phosphor-icons.js",

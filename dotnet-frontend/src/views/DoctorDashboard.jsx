@@ -185,6 +185,8 @@ const DoctorDashboard = () => {
                     key={appt.id}
                     className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-white/20 transition-colors"
                     data-testid={`doctor-appt-row-${appt.id}`}
+                    data-doctor-id={appt.doctor_user_id || ""}
+                    data-is-mine={appt.is_mine ? "true" : "false"}
                   >
                     <div className="shrink-0 w-20 text-[13px] font-semibold text-[#064E3B]">
                       {formatHospitalTime12h(appt.scheduled_at, hospitalTz)}

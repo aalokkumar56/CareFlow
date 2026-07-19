@@ -1,0 +1,49 @@
+---
+description: Mandatory test-driven development — tests first, no soft-passes
+alwaysApply: true
+---
+
+# Mandatory TDD (Cure-Flow)
+
+Applies to **`dotnet-backend-test`** (unit + integration) and **`dotnet-frontend-test`**.
+
+## Workflow (non-negotiable)
+
+1. **Tests first** — Write or update tests from expected outcomes (positive **and** negative) before production code.
+2. **Then implement** — Change app code until those tests pass.
+3. **Never loosen tests** to green the suite. Fix the code (or fix a wrong expectation only with explicit evidence).
+
+Catalogs in `TEST_SCENARIOS.md` (unit / integration / frontend) are the backlog. New work must add matching tests **before** implementation; do not leave signed-off scenarios unimplemented.
+
+## No soft-pass
+
+Forbidden patterns that hide real failures:
+
+- Silent early returns that skip assertions
+- `BeOneOf` / dual-status acceptance for conflicting outcomes (e.g. “200 or 400 is fine”)
+- Skip-stubs or placeholders that always pass
+- Catch-and-ignore that turns failures into success
+- Commenting out or `#if false` around failing asserts
+
+Assert **one** correct outcome per scenario. Ambiguous “acceptable” ranges are not allowed.
+
+## Security negatives (required)
+
+When touching auth, APIs, webhooks, or user-controlled input, include failing-path tests for:
+
+| Area | Assert |
+|------|--------|
+| AuthZ | Forbidden when permission missing |
+| IDOR / tenant | Cross-tenant IDs → 404/403, no data leak |
+| JWT | Invalid/expired/wrong-issuer → 401 |
+| XSS | Unsafe HTML/script not rendered or sanitized |
+| SSRF | Blocked/rejected remote URLs |
+| Webhooks | Bad/missing signature → reject |
+
+## Checklist before finishing
+
+- [ ] New/changed behavior has tests written first
+- [ ] Positive and negative cases covered
+- [ ] Security negatives present where applicable
+- [ ] Scenario catalog updated if scope is new
+- [ ] Suite fails correctly before fix; passes after — no softened asserts

@@ -52,7 +52,7 @@ public static class WhatsappWebhookProcessor
 
         var settings = await scope.ServiceProvider.GetRequiredService<IWhatsAppSettingsService>().GetAsync(ct);
         if (!TryVerifyWebhookSignature(body, signatureHeader, settings.AppSecret, logger))
-            return;
+            throw new DomainException("Invalid WhatsApp webhook signature", 401);
 
         var publisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();
         var ctx = new InboundContext(db, mediaStore, tenantId, publisher);
@@ -76,7 +76,8 @@ public static class WhatsappWebhookProcessor
     }
 
     /// <summary>
-    /// Returns true when signature is valid, or when verification is skipped (no secret / no header).
+    /// Returns true when signature is valid, or when verification is skipped (no AppSecret configured).
+    /// When AppSecret is set, missing or invalid <c>X-Hub-Signature-256</c> is rejected.
     /// </summary>
     public static bool TryVerifyWebhookSignature(
         string body,
@@ -90,9 +91,8 @@ public static class WhatsappWebhookProcessor
         if (string.IsNullOrEmpty(signatureHeader))
         {
             logger?.LogWarning(
-                "WhatsApp AppSecret is configured but X-Hub-Signature-256 header is missing — processing webhook anyway. " +
-                "Set the same App Secret in WhatsBiz Webhook Relay for strict verification.");
-            return true;
+                "WhatsApp AppSecret is configured but X-Hub-Signature-256 header is missing — rejecting webhook.");
+            return false;
         }
 
         if (!VerifyMetaSignature(body, signatureHeader, appSecret))

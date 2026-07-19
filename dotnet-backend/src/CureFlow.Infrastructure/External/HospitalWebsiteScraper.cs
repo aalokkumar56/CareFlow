@@ -1,3 +1,5 @@
+using System.Net;
+using CureFlow.Application.Common;
 using CureFlow.Application.Interfaces;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
@@ -28,7 +30,13 @@ public class HospitalWebsiteScraper : IHospitalWebsiteScraper
     {
         if (!baseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             baseUrl = "https://" + baseUrl;
-        baseUrl = baseUrl.TrimEnd('/');
+
+        // User-supplied URL — reject private/loopback/metadata targets (SSRF).
+        var validation = await SafeRemoteUrl.ValidatePublicHttpsAsync(baseUrl, Dns.GetHostAddressesAsync, ct);
+        if (!validation.IsAllowed || validation.Uri is null)
+            throw new ValidationException(validation.Reason ?? "URL is not allowed.");
+
+        baseUrl = validation.Uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
 
         var seen = new HashSet<string>();
         var parts = new List<string>();

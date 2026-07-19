@@ -11,7 +11,7 @@ Cure-Flow is a **public-facing healthcare app** with authenticated internal rout
 | Icons | `@phosphor-icons/react` v2 (`*Icon` suffix where migrated) |
 | API client | Axios in `src/lib/api.js` — JWT from `localStorage` |
 | Unit tests | Jest via `next/jest` (`jest.config.js`) |
-| E2E | Playwright on port **3000** |
+| E2E / UI | Playwright in sibling `../dotnet-frontend-test` (targets this app on port **3000**) |
 
 ## Scripts
 
@@ -21,7 +21,7 @@ npm run build    # production build → .next/
 npm run start    # serve production build :3000
 npm run lint     # next lint
 npm test         # Jest unit tests
-npm run test:e2e # Playwright (start API + dev server first)
+# Playwright lives in ../dotnet-frontend-test — see that package's README
 ```
 
 ## Environment variables
@@ -156,36 +156,43 @@ Harness notes:
 
 ### E2E (Playwright)
 
+UI/e2e tests live in the sibling package **`dotnet-frontend-test`**.
+
 Prerequisites:
 
 ```bash
 # Terminal 1 — API (default :5180)
 cd dotnet-backend/src/CureFlow.Api && dotnet run
 
-# Terminal 2 — optional; Playwright can start the frontend via webServer
+# Terminal 2 — optional; Playwright webServer can start the frontend
 cd dotnet-frontend && npm run dev
+
+# Terminal 3 — run tests
+cd dotnet-frontend-test
+npm install
+npx playwright install chromium
+npm run test:e2e
 ```
 
-Playwright config (`playwright.config.js`):
+Playwright config (`dotnet-frontend-test/playwright.config.js`):
 
 - `baseURL`: `http://localhost:3000` (`PLAYWRIGHT_BASE_URL` override supported)
-- `webServer`: `npm run dev`, readiness probe `GET /login` (200)
+- `webServer`: `npm run dev` with `cwd` → `../dotnet-frontend`, readiness probe `GET /login` (200)
 - `PLAYWRIGHT_SKIP_WEBSERVER=1` — use an already-running dev server
 - `PLAYWRIGHT_API_URL` — direct backend URL for API login helper (default `http://localhost:5180`)
-- First run: `npx playwright install chromium`
 
 | Suite | Command | Result |
 |-------|---------|--------|
-| Smoke | `npm run test:e2e -- e2e/smoke.spec.js` | **7/7 passed** |
-| Design (sample) | `DESIGN_SAMPLE=1 npm run test:e2e -- e2e/design/glass-surfaces.spec.js` | **54/54 passed** |
+| Smoke | `cd dotnet-frontend-test && npm run test:e2e:smoke` | **7/7 passed** |
+| Design (sample) | `cd dotnet-frontend-test && DESIGN_SAMPLE=1 npm run test:e2e -- e2e/design/glass-surfaces.spec.js` | **54/54 passed** |
 
 E2E harness fixes for Next App Router:
 
-- `e2e/helpers/auth.js` — `page.reload()` after seeding `localStorage` so the root-layout `AuthProvider` re-initializes (layout persists across client navigations).
+- `dotnet-frontend-test/e2e/helpers/auth.js` — `page.reload()` after seeding `localStorage` so the root-layout `AuthProvider` re-initializes (layout persists across client navigations).
 - SSR guards in `src/lib/auth.jsx` (`readStorage`) and `src/components/GlobalLoader.jsx` (`getServerSnapshot` for `useSyncExternalStore`).
 
 ### Outstanding (not in smoke scope)
 
 - Remaining unit suites (`EmailInbox.test.jsx`, `IntegrationsPanel.test.jsx`, `WhatsAppChatPanel.test.jsx`) still use Jest globals; run with `npm test` after `npm install --legacy-peer-deps`.
 - Full design matrix (without `DESIGN_SAMPLE=1`) is slower but uses the same Playwright + Next setup.
-- Backend must be running for e2e; Playwright `webServer` only starts the Next dev server.
+- Backend must be running for e2e; Playwright `webServer` only starts the Next dev server in `dotnet-frontend`.

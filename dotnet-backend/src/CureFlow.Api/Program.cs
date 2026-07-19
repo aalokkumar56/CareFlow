@@ -49,7 +49,12 @@ await using (var scope = app.Services.CreateAsyncScope())
     }
 
     // Permissions catalog — lightweight, required in every environment.
-    await RbacSeeder.SeedAsync(session);
+    // Integration contract tests that mock services may set Database:SeedRbac=false
+    // to avoid requiring a live PostgreSQL connection at host startup.
+    if (builder.Configuration.GetValue("Database:SeedRbac", defaultValue: true))
+    {
+        await RbacSeeder.SeedAsync(session);
+    }
 
     // Demo / E2E data — local/dev only. Production uses one-time /platform/auth/bootstrap.
     if (builder.Configuration.GetValue("Database:Seed", defaultValue: false)
@@ -121,3 +126,6 @@ static bool IsTransientDbFailure(Exception ex)
 
     return false;
 }
+
+// Expose entry point to Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory).
+public partial class Program { }

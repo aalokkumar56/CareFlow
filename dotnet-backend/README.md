@@ -14,7 +14,7 @@ This repository is the **handover foundation** — your developer extends busine
 | Application | `CureFlow.Application` | DTOs, service interfaces, common abstractions |
 | Domain | `CureFlow.Domain` | Entities (45+), enums, base types |
 | Infrastructure | `CureFlow.Infrastructure` | EF Core DbContext, services, integrations (Claude AI, WhatsApp, scraper) |
-| Tests | `CureFlow.Tests` | xUnit + FluentAssertions smoke tests |
+| Tests | `CureFlow.UnitTests` (in `dotnet-backend-test`) | xUnit + FluentAssertions unit tests |
 
 ---
 
@@ -205,7 +205,7 @@ This starts PostgreSQL + API. Frontend runs separately.
 
 ```
 dotnet-backend/
-├── CureFlow.sln
+├── CureFlow.sln                        # product projects only (no tests)
 ├── docker-compose.yml
 ├── .env.example
 ├── README.md
@@ -282,12 +282,16 @@ dotnet-backend/
 
 ## 🧪 Testing
 
+Unit tests live in the sibling folder `dotnet-backend-test` (solution `CureFlow.UnitTest.sln`):
+
 ```bash
-dotnet test
+cd ../dotnet-backend-test
+dotnet test CureFlow.UnitTest.sln
 ```
-Currently includes smoke tests. **Developer should add**:
+
+Currently includes smoke and service unit tests. **Developer should add**:
 - AuthService.LoginAsync unit tests (with InMemory provider)
-- PatientService CRUD integration tests (Testcontainers + PostgreSQL)
+- PatientService CRUD integration tests (Testcontainers + PostgreSQL) — under a future `CureFlow.IntegrationTest.sln`
 - Multi-tenancy isolation tests (User from tenant A cannot fetch patient from tenant B)
 - WhatsApp signature verification tests
 - Lifestyle upsert tests

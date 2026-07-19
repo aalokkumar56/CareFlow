@@ -439,11 +439,11 @@ A copy of the latest run is always kept at:
 D:\Projects\Sarvik\Care-Flow\screenshots\latest\
 ```
 
-The `playwright.config.js` and `e2e/global-teardown.js` are already configured to do this automatically. Do not change `screenshotsPath` to any other location.
+The Playwright app lives in `dotnet-frontend-test/`. Its `playwright.config.js` and `e2e/global-teardown.js` are already configured to do this automatically. Do not change `screenshotsPath` to any other location.
 
 ### After every Playwright run
 
-The `global-teardown.js` automatically:
+The `dotnet-frontend-test/e2e/global-teardown.js` automatically:
 1. Copies screenshots to `latest\`.
 2. Compares with the previous timestamped run.
 3. Prints `NEW`, `CHANGED/REGRESSION`, `REMOVED/FIXED` counts.

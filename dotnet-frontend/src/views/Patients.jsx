@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Plus, Export, MagnifyingGlass,
-  DotsThreeVertical, PencilSimple, Eye, Stethoscope,
+  DotsThreeVertical, PencilSimple, Eye, Stethoscope, Trash,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import EmptyState from "@/components/ui/EmptyState";
@@ -47,6 +47,7 @@ const Patients = () => {
   const hospitalTz = resolveHospitalTimezone(tenant);
   const { can } = usePermissions();
   const canCreatePatient = can(PERMISSIONS.PatientCreate);
+  const canDeletePatient = can(PERMISSIONS.PatientDelete);
   const { departments } = useDepartments();
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState([]);
@@ -490,6 +491,24 @@ const Patients = () => {
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEdit(p); }}>
                                   <PencilSimple className="w-3.5 h-3.5 mr-2" /> Edit
                                 </DropdownMenuItem>
+                                {canDeletePatient && (
+                                  <DropdownMenuItem
+                                    className="text-red-700 focus:text-red-800"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (!window.confirm(`Delete patient ${p.name}? This cannot be undone.`)) return;
+                                      api.delete(`/patients/${p.id}`)
+                                        .then(() => {
+                                          toast.success("Patient deleted");
+                                          if (selectedPatient?.id === p.id) setSelectedPatient(null);
+                                          fetchData();
+                                        })
+                                        .catch((err) => toast.error(normalizeApiError(err, "Failed to delete patient")));
+                                    }}
+                                  >
+                                    <Trash className="w-3.5 h-3.5 mr-2" /> Delete
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </td>

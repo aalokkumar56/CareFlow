@@ -368,9 +368,8 @@ public class ConversationService : IConversationService
             }
         }
 
-        if (!ok)
-            throw new DomainException(error ?? "The attachment was saved but could not be delivered via WhatsApp.", 400);
-
+        // Match text send: persist even when provider delivery fails; status reflects outcome.
+        _ = error;
         return msg.Id;
     }
 
