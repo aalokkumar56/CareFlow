@@ -27,7 +27,7 @@ const SETTINGS_ROUTES = [
 
 const PATIENT_TABS = [
   "tab-today",
-  "tab-details",
+  "tab-visit-chart",
   "tab-allergies",
   "tab-prescriptions",
   "tab-vitals",
@@ -35,9 +35,11 @@ const PATIENT_TABS = [
   "tab-history",
   "tab-lifestyle",
   "tab-timeline",
+  "tab-details",
 ];
 
 const CLINICAL_TABS = [
+  "tab-visit-chart",
   "tab-allergies",
   "tab-prescriptions",
   "tab-vitals",

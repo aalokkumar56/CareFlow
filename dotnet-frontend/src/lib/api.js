@@ -113,10 +113,15 @@ api.interceptors.request.use((cfg) => {
   const token = localStorage.getItem("cureflow_token");
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
 
-  if (
+  // Let the browser set multipart boundary; default JSON Content-Type breaks uploads.
+  if (typeof FormData !== "undefined" && cfg.data instanceof FormData) {
+    if (cfg.headers) {
+      delete cfg.headers["Content-Type"];
+      delete cfg.headers["content-type"];
+    }
+  } else if (
     cfg.data &&
     typeof cfg.data === "object" &&
-    !(cfg.data instanceof FormData) &&
     ["post", "put", "patch"].includes(String(cfg.method || "").toLowerCase())
   ) {
     cfg.data = keysToSnakeCase(cfg.data);
