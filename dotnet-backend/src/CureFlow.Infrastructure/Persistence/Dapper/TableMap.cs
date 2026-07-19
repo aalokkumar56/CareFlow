@@ -33,6 +33,7 @@ public static class TableMap
         [typeof(Injection)] = "Injections",
         [typeof(VitalSigns)] = "VitalSigns",
         [typeof(LabReport)] = "LabReports",
+        [typeof(PatientDocument)] = "PatientDocuments",
         [typeof(ClinicalNote)] = "ClinicalNotes",
         [typeof(MedicalHistoryItem)] = "MedicalHistory",
         [typeof(FamilyHistoryItem)] = "FamilyHistory",

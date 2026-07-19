@@ -34,7 +34,7 @@ test.describe("Patient detail UI", () => {
     await expect(page.getByTestId("patient-name")).toBeVisible({ timeout: 20_000 });
   });
 
-  test("shows single canonical patient name in content, not duplicated in page-title", async ({ page }) => {
+  test("shows single canonical patient name in content, not duplicated in breadcrumb", async ({ page }) => {
     const pageTitle = page.getByTestId("page-title");
     await expect(pageTitle).toHaveCount(0);
 
@@ -45,6 +45,9 @@ test.describe("Patient detail UI", () => {
     const breadcrumb = page.getByTestId("page-breadcrumb");
     await expect(breadcrumb).toBeVisible();
     await expect(breadcrumb.getByRole("link", { name: "Patients" })).toBeVisible();
+    await expect(breadcrumb.getByText("Profile")).toBeVisible();
+    // Full patient name must appear once (header), not again in the trail
+    await expect(breadcrumb).not.toContainText(patientName);
   });
 
   test("full patient name is visible and not truncated to id-like prefix", async ({ page }) => {

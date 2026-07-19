@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Pill, Plus, Trash, Pulse, Printer } from "@phosphor-icons/react";
+import PaperNoteUpload from "@/components/ehr/PaperNoteUpload";
 
 const emptyItem = () => ({
   drug_name: "", generic_name: "", strength: "", form: "tablet", route: "oral",
@@ -144,6 +145,15 @@ const Prescriptions = ({
         >
           <Plus className="w-3.5 h-3.5" /> New prescription
         </Button>
+      </div>
+
+      <div className="px-5 py-3 border-b border-white/60" data-testid="rx-paper-note-section">
+        <PaperNoteUpload
+          patientId={patientId}
+          visitId={visitId}
+          testIdPrefix="rx-paper-note"
+          onUploaded={onDataChanged}
+        />
       </div>
 
       {show && (

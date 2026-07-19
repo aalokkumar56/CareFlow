@@ -9,6 +9,7 @@ public interface IVisitService
     Task<Guid> CreateAsync(CreateVisitRequest req, CancellationToken ct = default);
     Task<VisitDetailDto> GetAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<VisitSummaryDto>> ListByPatientAsync(Guid patientId, CancellationToken ct = default);
+    Task<IReadOnlyList<VisitChartCardDto>> GetVisitChartAsync(Guid patientId, CancellationToken ct = default);
     Task UpdateAsync(Guid id, UpdateVisitRequest req, CancellationToken ct = default);
     Task CompleteAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<TimelineEntryDto>> GetTimelineAsync(Guid patientId, CancellationToken ct = default);

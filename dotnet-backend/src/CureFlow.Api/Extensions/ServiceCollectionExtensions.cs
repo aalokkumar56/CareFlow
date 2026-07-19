@@ -161,6 +161,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAllergyService, AllergyService>();
         services.AddScoped<IPrescriptionService, PrescriptionService>();
         services.AddScoped<IClinicalRecordService, ClinicalRecordService>();
+        services.AddScoped<IPatientDocumentService, PatientDocumentService>();
         services.AddScoped<IStaffService, StaffService>();
         services.AddScoped<IVisitService, VisitService>();
         services.AddScoped<IConversationService, ConversationService>();
@@ -254,6 +255,10 @@ public static class ServiceCollectionExtensions
         var labPath = string.IsNullOrWhiteSpace(storageOptions.LabReportsPath) ? "lab-reports" : storageOptions.LabReportsPath.Trim('/');
         var labRoot = Path.Combine(app.Environment.ContentRootPath, labPath);
         Directory.CreateDirectory(labRoot);
+        var docsPath = string.IsNullOrWhiteSpace(storageOptions.PatientDocumentsPath)
+            ? "patient-documents"
+            : storageOptions.PatientDocumentsPath.Trim('/');
+        Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, docsPath));
 
         var mediaOptions = app.Configuration.GetSection(WhatsappMediaOptions.SectionName).Get<WhatsappMediaOptions>() ?? new WhatsappMediaOptions();
         var whatsappMediaPath = string.IsNullOrWhiteSpace(mediaOptions.StoragePath) ? "whatsapp-media" : mediaOptions.StoragePath.Trim('/');

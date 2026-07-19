@@ -22,6 +22,11 @@ public class PatientVisitsController : ControllerBase
     public async Task<IActionResult> Timeline(Guid patientId, CancellationToken ct) =>
         Ok(await _svc.GetTimelineAsync(patientId, ct));
 
+    [HttpGet("visit-chart")]
+    [Authorize(Policy = "Permission:Clinical.View")]
+    public async Task<IActionResult> VisitChart(Guid patientId, CancellationToken ct) =>
+        Ok(await _svc.GetVisitChartAsync(patientId, ct));
+
     [HttpPost("visits")]
     [Authorize(Policy = "Permission:Clinical.Edit")]
     public async Task<IActionResult> CreateVisit(Guid patientId, [FromBody] CreateVisitRequest req, CancellationToken ct)
