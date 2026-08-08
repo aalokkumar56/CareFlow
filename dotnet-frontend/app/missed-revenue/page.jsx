@@ -1,5 +1,11 @@
 "use client";
 
-import { createClientRoute } from "@/components/createClientRoute";
+import dynamic from "next/dynamic";
+import RouteLoadingSkeleton from "@/components/RouteLoadingSkeleton";
 
-export default createClientRoute(() => import("./page.client"));
+const MissedRevenuePage = dynamic(() => import("./page.client"), {
+  ssr: false,
+  loading: () => <RouteLoadingSkeleton />,
+});
+
+export default MissedRevenuePage;

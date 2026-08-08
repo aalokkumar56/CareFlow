@@ -20,14 +20,19 @@ public class JwtTokenService(IConfiguration config) : IJwtTokenService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+        var roleNormalized = role?.ToLowerInvariant() ?? "";
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new(JwtRegisteredClaimNames.Email, email),
             new("tenant_id", tenantId.ToString()),
-            new(ClaimTypes.Role, role),
+            new(ClaimTypes.Role, role ?? ""),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
+        if (!string.Equals(role, roleNormalized, StringComparison.Ordinal))
+            claims.Add(new(ClaimTypes.Role, roleNormalized));
+        if (roleNormalized == "tenantowner")
+            claims.Add(new(ClaimTypes.Role, "tenant_owner"));
 
         foreach (var permission in permissions.Distinct(StringComparer.OrdinalIgnoreCase))
             claims.Add(new Claim(CureFlowPermissions.ClaimType, permission));

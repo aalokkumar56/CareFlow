@@ -79,8 +79,30 @@ public class PatientsController : ControllerBase
     public async Task<IActionResult> ImportCsv(IFormFile file, CancellationToken ct)
     {
         using var s = file.OpenReadStream();
-        var (inserted, skipped) = await _svc.ImportCsvAsync(s, ct);
-        return Ok(new { inserted, skipped });
+        var (inserted, skipped, blankRows, skipLog) = await _svc.ImportCsvAsync(s, ct);
+        return Ok(new { inserted, skipped, blankRows, skipLog });
+    }   
+
+    [HttpPost("import-excel")]
+    [Authorize(Roles = "admin,tenant_owner,Admin,TenantOwner")]
+    public async Task<IActionResult> ImportExcel(IFormFile file, CancellationToken ct)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "No file provided" });
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (ext != ".xlsx" && ext != ".xls" && ext != ".csv")
+            return BadRequest(new { message = "Only .xlsx, .xls, and .csv files are supported" });
+
+        using var stream = file.OpenReadStream();
+        var result = await _svc.ImportExcelAsync(stream, ext, ct);
+        return Ok(new
+        {
+            inserted = result.Inserted,
+            skipped = result.Skipped,
+            blankRows = result.BlankRows,
+            skipLog = result.SkipLog   // per-row skip reasons
+        });
     }
 
     private static async Task ValidateAsync<T>(IValidator<T> validator, T model, CancellationToken ct)

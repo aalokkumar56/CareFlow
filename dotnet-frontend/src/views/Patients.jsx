@@ -26,7 +26,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Plus, Export, MagnifyingGlass,
+  Plus, Export, MagnifyingGlass, FileXls, UploadSimple, DownloadSimple,
   DotsThreeVertical, PencilSimple, Eye, Stethoscope,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -45,7 +45,7 @@ const Patients = () => {
   const navigate = useNavigate();
   const { tenant } = useAuth();
   const hospitalTz = resolveHospitalTimezone(tenant);
-  const { can } = usePermissions();
+  const { can, isAdmin } = usePermissions();
   const canCreatePatient = can(PERMISSIONS.PatientCreate);
   const { departments } = useDepartments();
   const [params, setParams] = useSearchParams();
@@ -61,6 +61,10 @@ const Patients = () => {
   const [total, setTotal] = useState(0);
   const [nextApptMap, setNextApptMap] = useState({});
   const [openNew, setOpenNew] = useState(params.get("new") === "1");
+  const [openImportExcel, setOpenImportExcel] = useState(false);
+  const [excelFile, setExcelFile] = useState(null);
+  const [importingExcel, setImportingExcel] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [form, setForm] = useState({
     name: "", phone: "", age: "", gender: "", department: "",
@@ -233,6 +237,64 @@ const Patients = () => {
     }
   };
 
+  const handleImportExcel = async (e) => {
+    e.preventDefault();
+    if (!excelFile) {
+      toast.error("Please select an Excel or CSV file");
+      return;
+    }
+    setImportingExcel(true);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", excelFile);
+      const res = await api.post("/patients/import-excel", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const { inserted, skipped, blankRows, skipLog } = res.data || {};
+      const ins = inserted || 0;
+      const skp = skipped || 0;
+
+      if (ins === 0 && skp === 0) {
+        toast.warning("No records found in file. Check that your file has Name and Phone/Mobile columns.");
+      } else if (ins === 0) {
+        toast.info(`Import done: ${skp} rows skipped — see details below.`);
+      } else {
+        toast.success(`✅ ${ins} patients imported successfully!`);
+      }
+
+      if (skp > 0 && skipLog?.length > 0) {
+        // Stay open and show skip details
+        setImportResult({ inserted: ins, skipped: skp, blankRows: blankRows || 0, skipLog });
+        setExcelFile(null);
+      } else {
+        setOpenImportExcel(false);
+        setExcelFile(null);
+      }
+      fetchData();
+    } catch (err) {
+      toast.error(normalizeApiError(err, "Failed to import file"));
+    } finally {
+      setImportingExcel(false);
+    }
+  };
+
+  const downloadSampleTemplate = () => {
+    const header = "Patient Name,Mobile Number,Age,Gender,Department,Source,Tags,Notes";
+    const rows = [
+      "Ramesh Kumar,9876543210,45,Male,Cardiology,Referral,VIP,Follow-up required",
+      "Priya Sharma,9123456789,32,Female,Gynaecology,Walk-in,,",
+      "Ankit Verma,8000012345,28,Male,Orthopaedics,Online,,",
+    ];
+    const blob = new Blob([[header, ...rows].join("\n") + "\n"], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sample_patient_import.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const uniqueSources = useMemo(() => {
     const fromApi = SOURCE_OPTIONS.filter((s) => s.value !== "all");
     return fromApi;
@@ -260,6 +322,126 @@ const Patients = () => {
             <Export weight="regular" className="w-4 h-4 mr-1.5" />
             Export
           </Button>
+          {isAdmin && (
+            <Dialog open={openImportExcel} onOpenChange={setOpenImportExcel}>
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid="import-excel-patients-btn"
+                  className="rounded-xl h-9 px-3.5 text-[13px] border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
+                >
+                  <FileXls weight="bold" className="w-4 h-4 mr-1.5 text-emerald-600 dark:text-emerald-400" />
+                  Import Excel
+                </Button>
+              </DialogTrigger>
+              <DialogContent className={`rounded-xl glass-card ${importResult ? 'max-w-2xl' : 'max-w-md'}`} data-testid="import-excel-dialog">
+                <DialogHeader>
+                  <DialogTitle className="font-heading flex items-center gap-2">
+                    <FileXls className="w-5 h-5 text-emerald-600" />
+                    Import Patients from Excel
+                  </DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleImportExcel} className="space-y-4">
+                  <div className="text-xs text-text-secondary leading-relaxed space-y-1.5">
+                    <p>Upload an Excel (<code className="bg-muted px-1 rounded">.xlsx</code>, <code className="bg-muted px-1 rounded">.xls</code>) or <code className="bg-muted px-1 rounded">.csv</code> file.</p>
+                    <p className="text-[11px] text-text-tertiary">
+                      The file must have a <strong>Name</strong> column (e.g. &quot;Patient Name&quot;, &quot;Name&quot;, &quot;Full Name&quot;) and a <strong>Phone</strong> column (e.g. &quot;Mobile Number&quot;, &quot;Phone&quot;, &quot;Contact&quot;, &quot;Mob&quot;). Other columns like Age, Gender, Department, Notes are auto-detected.
+                    </p>
+                  </div>
+
+                  <div className="border-2 border-dashed border-white/40 dark:border-white/10 rounded-xl p-4 text-center hover:border-emerald-500/50 transition-colors">
+                    <input
+                      type="file"
+                      id="excel-file-input"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={(e) => setExcelFile(e.target.files[0] || null)}
+                      className="hidden"
+                    />
+                    <label htmlFor="excel-file-input" className="cursor-pointer flex flex-col items-center justify-center gap-2">
+                      <UploadSimple className="w-8 h-8 text-emerald-500 animate-pulse" />
+                      <span className="text-xs font-medium text-text-primary">
+                        {excelFile ? excelFile.name : "Click to choose Excel file"}
+                      </span>
+                      <span className="text-[11px] text-text-tertiary">
+                        Supports .xlsx, .xls, .csv up to 10MB
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={downloadSampleTemplate}
+                      className="text-[12px] text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 font-medium"
+                    >
+                      <DownloadSimple className="w-3.5 h-3.5" />
+                      Download Sample Template
+                    </button>
+                  </div>
+
+                  {/* Skip Log Results Panel */}
+                  {importResult && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap text-xs">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-semibold">
+                          ✅ {importResult.inserted} inserted
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-semibold">
+                          ⚠️ {importResult.skipped} skipped
+                        </span>
+                        {importResult.blankRows > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-600 dark:text-gray-400 font-semibold">
+                            {importResult.blankRows} blank rows
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-text-tertiary">Rows below were skipped. Fix them and re-upload to import the rest.</p>
+                      <div className="border border-amber-500/20 rounded-lg overflow-hidden">
+                        <div className="grid grid-cols-[3rem_1fr_1fr_2fr] text-[10px] font-semibold uppercase tracking-wider bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2 py-1.5">
+                          <span>Row</span>
+                          <span>Name</span>
+                          <span>Phone</span>
+                          <span>Reason</span>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto divide-y divide-white/5">
+                          {importResult.skipLog.map((s, i) => (
+                            <div key={i} className="grid grid-cols-[3rem_1fr_1fr_2fr] text-[11px] px-2 py-1.5 hover:bg-white/5 transition-colors">
+                              <span className="text-text-tertiary font-mono">{s.rowNumber}</span>
+                              <span className="text-text-secondary truncate pr-1">{s.name || <em className="opacity-40">—</em>}</span>
+                              <span className="text-text-secondary truncate pr-1 font-mono">{s.phoneRaw || <em className="opacity-40">—</em>}</span>
+                              <span className="text-amber-600 dark:text-amber-400 break-words">{s.reason}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <DialogFooter className="pt-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => { setOpenImportExcel(false); setExcelFile(null); setImportResult(null); }}
+                      className="rounded-xl text-[13px]"
+                    >
+                      {importResult ? "Close" : "Cancel"}
+                    </Button>
+                    {!importResult && (
+                      <Button
+                        type="submit"
+                        disabled={!excelFile || importingExcel}
+                        data-testid="submit-import-excel-btn"
+                        className="btn-primary rounded-xl text-[13px]"
+                      >
+                        {importingExcel ? "Importing..." : "Upload & Import"}
+                      </Button>
+                    )}
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
           {canCreatePatient && (
           <Dialog open={openNew} onOpenChange={setOpenNew}>
             <DialogTrigger asChild>
