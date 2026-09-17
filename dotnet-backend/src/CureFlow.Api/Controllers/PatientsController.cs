@@ -28,6 +28,7 @@ public class PatientsController : ControllerBase
     [HttpGet]
     [Authorize(Policy = "Permission:Patient.View")]
     public async Task<IActionResult> List(
+        [FromServices] IAuthorizationService authorization,
         [FromQuery] string? q,
         [FromQuery] string? status,
         [FromQuery] string? department,
@@ -35,8 +36,15 @@ public class PatientsController : ControllerBase
         [FromQuery] string? inquiry_source,
         [FromQuery] int page = 1,
         [FromQuery] int page_size = Pagination.DefaultPageSize,
-        CancellationToken ct = default) =>
-        Ok(await _svc.ListAsync(q, status, department, tag, inquiry_source, page, page_size, ct));
+        CancellationToken ct = default,
+        [FromQuery] string sort_by = "name",
+        [FromQuery] string sort_direction = "asc")
+    {
+        var canViewAppointments = (await authorization.AuthorizeAsync(User, null, "Permission:Appointment.View")).Succeeded;
+        if (sort_by == "next_appointment" && !canViewAppointments) return Forbid();
+        return Ok(await _svc.ListAsync(q, status, department, tag, inquiry_source, page, page_size, ct,
+            sort_by, sort_direction, canViewAppointments));
+    }
 
     [HttpGet("{id:guid}")]
     [Authorize(Policy = "Permission:Patient.View")]

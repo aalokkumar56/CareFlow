@@ -1,4 +1,5 @@
 using CureFlow.Application.DTOs;
+using CureFlow.Infrastructure.Services;
 using CureFlow.Application.Common;
 using CureFlow.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -12,14 +13,35 @@ namespace CureFlow.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _auth;
-    public AuthController(IAuthService auth) => _auth = auth;
+    private readonly RefreshSessionService _refresh;
+    public AuthController(IAuthService auth, RefreshSessionService refresh) { _auth = auth; _refresh = refresh; }
 
     /// <summary>Login with email + password. Returns JWT.</summary>
     [HttpPost("login")]
     [AllowAnonymous]
     [EnableRateLimiting("login")]
-    public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest req, CancellationToken ct) =>
-        Ok(await _auth.LoginAsync(req, ct));
+    public async Task<IActionResult> Login([FromBody] LoginRequest req, CancellationToken ct)
+    {
+        var login = await _auth.LoginAsync(req, ct);
+        var session = await _refresh.StartAsync(login, ct);
+        return Ok(new { session.AccessToken, session.RefreshToken, session.RefreshExpiresAt, login.User, login.Tenant });
+    }
+
+    public record RefreshRequest(string RefreshToken);
+
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    [EnableRateLimiting("login")]
+    public async Task<IActionResult> Refresh([FromBody] RefreshRequest req, CancellationToken ct) =>
+        Ok(await _refresh.RotateAsync(req.RefreshToken, ct));
+
+    [HttpPost("logout")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Logout([FromBody] RefreshRequest req, CancellationToken ct)
+    {
+        await _refresh.RevokeAsync(req.RefreshToken, ct);
+        return NoContent();
+    }
 
     /// <summary>Register a new hospital tenant. Public endpoint for SaaS signup.</summary>
     [HttpPost("register-tenant")]

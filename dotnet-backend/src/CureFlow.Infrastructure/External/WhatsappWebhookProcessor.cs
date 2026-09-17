@@ -168,7 +168,11 @@ public static class WhatsappWebhookProcessor
             "failed" => MessageStatus.Failed,
             _ => message.Status
         };
-        await db.UpdateAsync(message, ct: ct);
+        await db.ExecuteAsync(
+            $"""UPDATE "Messages" SET "Status" = @status WHERE "Id" = @id AND {msgWhere} AND "Status" <> @read AND NOT ("Status" = @delivered AND @status IN (@sent, @failed))""",
+            new { id = message.Id, status = message.Status, read = MessageStatus.Read,
+                delivered = MessageStatus.Delivered, sent = MessageStatus.Sent, failed = MessageStatus.Failed },
+            ct: ct);
     }
 
     public static bool VerifyMetaSignature(string body, string? signatureHeader, string appSecret)
@@ -552,7 +556,11 @@ public static class WhatsappWebhookProcessor
                 "failed" => MessageStatus.Failed,
                 _ => message.Status
             };
-            await db.UpdateAsync(message, ct: ct);
+            await db.ExecuteAsync(
+            $"""UPDATE "Messages" SET "Status" = @status WHERE "Id" = @id AND {msgWhere} AND "Status" <> @read AND NOT ("Status" = @delivered AND @status IN (@sent, @failed))""",
+            new { id = message.Id, status = message.Status, read = MessageStatus.Read,
+                delivered = MessageStatus.Delivered, sent = MessageStatus.Sent, failed = MessageStatus.Failed },
+            ct: ct);
         }
     }
 

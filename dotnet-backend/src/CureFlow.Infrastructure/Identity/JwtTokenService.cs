@@ -15,7 +15,7 @@ public class JwtTokenService(IConfiguration config) : IJwtTokenService
         var secret = config["Jwt:Secret"] ?? throw new InvalidOperationException("Jwt:Secret not configured");
         var issuer = config["Jwt:Issuer"] ?? "cureflow";
         var audience = config["Jwt:Audience"] ?? "cureflow-api";
-        var lifetime = expires ?? TimeSpan.FromHours(24);
+        var lifetime = expires ?? TimeSpan.FromHours(1);
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

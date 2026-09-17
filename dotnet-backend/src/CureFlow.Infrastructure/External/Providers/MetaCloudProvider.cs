@@ -256,14 +256,14 @@ public class MetaCloudProvider : IWhatsappProvider
 
     private async Task<T?> PostGraphAsync<T>(string url, object payload, string accessToken, CancellationToken ct)
     {
-        var client = CreateClient();
-        var req = new HttpRequestMessage(HttpMethod.Post, url)
+        using var client = CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = JsonContent.Create(payload)
         };
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
-        var response = await client.SendAsync(req, ct);
+        using var response = await client.SendAsync(req, ct);
         var responseContent = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
@@ -285,7 +285,7 @@ public class MetaCloudProvider : IWhatsappProvider
         CancellationToken ct)
     {
         var endpoint = GraphResourcePath($"{phoneNumberId}/media");
-        var client = CreateClient();
+        using var client = CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         using var multipart = new MultipartFormDataContent();
@@ -294,7 +294,7 @@ public class MetaCloudProvider : IWhatsappProvider
         fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
         multipart.Add(fileContent, "file", fileName);
 
-        var response = await client.PostAsync(endpoint, multipart, ct);
+        using var response = await client.PostAsync(endpoint, multipart, ct);
         var responseContent = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)

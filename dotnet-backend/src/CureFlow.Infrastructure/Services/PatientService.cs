@@ -134,8 +134,31 @@ public class PatientService : IPatientService
 
     public async Task<PagedResult<PatientSummaryDto>> ListAsync(
         string? q, string? status, string? department, string? tag, string? inquirySource,
-        int page, int pageSize, CancellationToken ct = default)
+        int page, int pageSize, CancellationToken ct = default,
+        string sortBy = "name", string sortDirection = "asc", bool includeAppointments = false)
     {
+        var direction = sortDirection.ToLowerInvariant() switch
+        {
+            "asc" => "ASC",
+            "desc" => "DESC",
+            _ => throw new ValidationException("Sort direction must be asc or desc.")
+        };
+        // Only trusted SQL expressions may reach ORDER BY.
+        var sortExpression = sortBy.ToLowerInvariant() switch
+        {
+            "name" => """NULLIF(LOWER(BTRIM("Name")), '')""",
+            "phone" => """NULLIF(BTRIM("Phone"), '')""",
+            "email" => """NULLIF(LOWER(BTRIM("Email")), '')""",
+            "age" => "\"Age\"",
+            "gender" => "\"Gender\"",
+            "department" => """NULLIF(LOWER(BTRIM("Department")), '')""",
+            "status" => """CASE "Status" WHEN 0 THEN 'new inquiry' WHEN 1 THEN 'contacted' WHEN 2 THEN 'appointment scheduled' WHEN 3 THEN 'follow up pending' WHEN 4 THEN 'visited' WHEN 5 THEN 'no response' WHEN 6 THEN 'lost' WHEN 7 THEN 're engagement' END""",
+            "inquiry_source" => """NULLIF(LOWER(BTRIM("InquirySource")), '')""",
+            "last_contact_at" => "\"LastContactAt\"",
+            "created_at" => "\"CreatedAt\"",
+            "next_appointment" when includeAppointments => """(SELECT MIN(a."ScheduledAt") FROM "Appointments" a WHERE a."PatientId" = "Patients"."Id" AND a."TenantId" = "Patients"."TenantId" AND a."IsDeleted" = false AND a."Status" IN (0, 1) AND a."ScheduledAt" >= @now)""",
+            _ => throw new ValidationException("Unsupported patient sort column.")
+        };
         var (normalizedPage, normalizedPageSize, skip) = Pagination.Normalize(page, pageSize);
         var filters = new List<string> { SqlFragments.WhereActive<Patient>(ignoreTenant: false) };
         var param = new Dictionary<string, object?>();
@@ -172,15 +195,27 @@ public class PatientService : IPatientService
 
         param["skip"] = skip;
         param["take"] = normalizedPageSize;
+        param["now"] = DateTime.UtcNow;
         var rows = await _db.QueryAsync<Patient>(
             $"""
             SELECT * FROM "Patients"{where}
-            ORDER BY "CreatedAt" DESC
+            ORDER BY {sortExpression} {direction} NULLS LAST, LOWER("Name") ASC, "Id" ASC
             OFFSET @skip LIMIT @take
             """, param, ct: ct);
 
+        var nextAppointments = new Dictionary<Guid, DateTime?>();
+        if (includeAppointments && rows.Count > 0)
+        {
+            var appointmentWhere = SqlFragments.WhereActive<Appointment>(ignoreTenant: false);
+            var upcoming = await _db.QueryAsync<Appointment>(
+                $"""SELECT "PatientId", MIN("ScheduledAt") AS "ScheduledAt" FROM "Appointments" WHERE {appointmentWhere} AND "PatientId" = ANY(@ids) AND "Status" IN (0, 1) AND "ScheduledAt" >= @now GROUP BY "PatientId" """,
+                new { ids = rows.Select(p => p.Id).ToArray(), now = param["now"] }, ct: ct);
+            foreach (var appointment in upcoming)
+                nextAppointments[appointment.PatientId] = appointment.ScheduledAt;
+        }
+
         var items = rows.Select(p => new PatientSummaryDto(p.Id, p.Name, p.Phone, p.Email, p.Age, p.Gender,
-            p.Department, p.Status, p.Tags, p.InquirySource, p.CreatedAt, p.LastContactAt)).ToList();
+            p.Department, p.Status, p.Tags, p.InquirySource, p.CreatedAt, p.LastContactAt, nextAppointments.GetValueOrDefault(p.Id))).ToList();
 
         return new PagedResult<PatientSummaryDto>
         {
@@ -589,7 +624,7 @@ public class PatientService : IPatientService
         p.InquirySource, p.ReferralDoctor,
         p.LastContactAt, p.FollowUpDate,
         p.AiSummary, p.AiLeadScore,
-        p.CreatedAt, p.UpdatedAt);
+        p.CreatedAt, p.UpdatedAt, p.SourceLeadId);
 
     private static LifestyleProfileDto MapLifestyle(LifestyleProfile l) => new(
         l.PatientId,

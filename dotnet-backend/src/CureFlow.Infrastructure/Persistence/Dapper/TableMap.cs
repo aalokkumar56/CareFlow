@@ -17,6 +17,7 @@ public static class TableMap
         [typeof(PlatformAuditLog)] = "PlatformAuditLogs",
         [typeof(User)] = "Users",
         [typeof(Patient)] = "Patients",
+        [typeof(Lead)] = "Leads",
         [typeof(Conversation)] = "Conversations",
         [typeof(Message)] = "Messages",
         [typeof(InternalNote)] = "InternalNotes",

@@ -106,6 +106,7 @@ public class TenantLifecycleMiddleware
 
     private static bool IsWebhookOrPublic(string path) =>
         path.StartsWith("/api/webhooks", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/api/whatsapp/webhook", StringComparison.OrdinalIgnoreCase)
         || path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase)
         || path.StartsWith("/health", StringComparison.OrdinalIgnoreCase);
 

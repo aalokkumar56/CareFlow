@@ -4,6 +4,11 @@ namespace CureFlow.Application.Common;
 public static class CureFlowPermissions
 {
     public const string ClaimType = "permission";
+    public const string LeadView = "Lead.View";
+    public const string LeadCreate = "Lead.Create";
+    public const string LeadEdit = "Lead.Edit";
+    public const string LeadDelete = "Lead.Delete";
+    public const string LeadConvert = "Lead.Convert";
 
     // Patient
     public const string PatientView = "Patient.View";
@@ -64,6 +69,7 @@ public static class CureFlowPermissions
 
     public static readonly IReadOnlyList<string> All =
     [
+        LeadView, LeadCreate, LeadEdit, LeadDelete, LeadConvert,
         PatientView, PatientCreate, PatientEdit, PatientDelete,
         AppointmentView, AppointmentCreate, AppointmentEdit, AppointmentDelete,
         BillingView, BillingCreate, BillingEdit, BillingDelete,

@@ -6,6 +6,7 @@ namespace CureFlow.Domain.Entities;
 /// <summary>Patient / Lead record. Source of truth for everything about a patient.</summary>
 public class Patient : TenantEntity
 {
+    public Guid? SourceLeadId { get; set; }
     // Identity
     public string Name { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;

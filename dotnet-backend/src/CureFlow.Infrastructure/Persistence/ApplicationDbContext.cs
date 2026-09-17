@@ -28,6 +28,7 @@ public class ApplicationDbContext : DbContext
 
     // SaaS
     public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<User> Users => Set<User>();
     public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();
     public DbSet<TenantOnboardingState> TenantOnboardingStates => Set<TenantOnboardingState>();
@@ -35,6 +36,7 @@ public class ApplicationDbContext : DbContext
 
     // CRM core
     public DbSet<Patient> Patients => Set<Patient>();
+    public DbSet<Lead> Leads => Set<Lead>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<InternalNote> InternalNotes => Set<InternalNote>();
@@ -101,6 +103,8 @@ public class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder mb)
     {
         base.OnModelCreating(mb);
+        mb.Entity<RefreshSession>().HasKey(e => e.TokenHash);
+        mb.Entity<RefreshSession>().HasIndex(e => e.FamilyId);
 
         // Apply configurations from assembly
         var hasEntityConfigurations = typeof(ApplicationDbContext).Assembly
@@ -136,6 +140,12 @@ public class ApplicationDbContext : DbContext
         }
 
         // Indexes & uniques
+        mb.Entity<Lead>().HasIndex(l => new { l.TenantId, l.Phone }).IsUnique().HasFilter("\"IsDeleted\" = false");
+        mb.Entity<Lead>().Property(l => l.Phone).HasMaxLength(15);
+        mb.Entity<Lead>().Property(l => l.Name).HasMaxLength(200);
+        mb.Entity<Lead>().HasIndex(l => new { l.TenantId, l.ConvertedAt });
+        mb.Entity<Patient>().HasIndex(p => p.SourceLeadId).IsUnique().HasFilter("\"SourceLeadId\" IS NOT NULL");
+        mb.Entity<CampaignRecipient>().HasIndex(r => r.LeadId);
         mb.Entity<Tenant>().HasIndex(t => t.Slug).IsUnique();
         mb.Entity<Tenant>().HasIndex(t => t.LifecycleStatus);
         mb.Entity<PlatformUser>().HasIndex(p => p.Email).IsUnique();

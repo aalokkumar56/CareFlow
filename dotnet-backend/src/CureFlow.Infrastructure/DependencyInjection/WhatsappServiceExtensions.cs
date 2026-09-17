@@ -29,6 +29,13 @@ public static class WhatsappServiceExtensions
         services.AddHttpClient("MetaCloud", client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            // Do not reuse idle TLS connections: Windows can report SEC_E_ILLEGAL_MESSAGE
+            // when an upstream server or proxy has closed a pooled connection.
+            PooledConnectionIdleTimeout = TimeSpan.Zero,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+            ConnectTimeout = TimeSpan.FromSeconds(10)
         });
 
         services.AddHttpClient("WebhookRelay", client =>

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using CureFlow.Application.Common;
 using CureFlow.Application.DTOs;
 using CureFlow.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -13,6 +15,18 @@ public class CampaignsController : ControllerBase
 
     public CampaignsController(ICampaignService svc) => _svc = svc;
 
+    private bool CanAccessAudience(object? audience)
+    {
+        var value = JsonSerializer.SerializeToElement(audience);
+        return value.ValueKind != JsonValueKind.Object || !value.TryGetProperty("source", out var source)
+            || source.GetString() != "leads" || User.HasClaim(CureFlowPermissions.ClaimType, CureFlowPermissions.LeadView);
+    }
+
+    private async Task<bool> CanAccessCampaign(Guid id, CancellationToken ct)
+    {
+        var value = JsonSerializer.SerializeToElement(await _svc.GetAsync(id, ct));
+        return !value.TryGetProperty("audience", out var audience) || CanAccessAudience(audience);
+    }
     public record CreateCampaignRequest(string Name, string? Description, string MessageBody, object Audience, DateTime? ScheduledAt = null);
 
     public record ScheduleCampaignRequest(DateTime ScheduledAt);
@@ -21,6 +35,7 @@ public class CampaignsController : ControllerBase
     [Authorize(Policy = "Permission:Campaign.Manage")]
     public async Task<IActionResult> Create([FromBody] CreateCampaignRequest r, CancellationToken ct)
     {
+        if (!CanAccessAudience(r.Audience)) return Forbid();
         var id = await _svc.CreateAsync(r.Name, r.Description, r.MessageBody, r.Audience, r.ScheduledAt, ct);
         return Ok(new { id, status = r.ScheduledAt.HasValue ? "scheduled" : "draft" });
     }
@@ -36,12 +51,19 @@ public class CampaignsController : ControllerBase
 
     [HttpGet("{id:guid}")]
     [Authorize(Policy = "Permission:Campaign.View")]
-    public async Task<IActionResult> Get(Guid id, CancellationToken ct) => Ok(await _svc.GetAsync(id, ct));
+    public async Task<IActionResult> Get(Guid id, CancellationToken ct)
+    {
+        var result = await _svc.GetAsync(id, ct);
+        var value = JsonSerializer.SerializeToElement(result);
+        if (value.TryGetProperty("audience", out var audience) && !CanAccessAudience(audience)) return Forbid();
+        return Ok(result);
+    }
 
     [HttpPost("preview-audience")]
     [Authorize(Policy = "Permission:Campaign.View")]
     public async Task<IActionResult> Preview([FromBody] object audience, CancellationToken ct)
     {
+        if (!CanAccessAudience(audience)) return Forbid();
         var (count, sample) = await _svc.PreviewAudienceAsync(audience, ct);
         return Ok(new { count, sample });
     }
@@ -50,6 +72,7 @@ public class CampaignsController : ControllerBase
     [Authorize(Policy = "Permission:Campaign.Manage")]
     public async Task<IActionResult> Patch(Guid id, [FromBody] UpdateCampaignRequest update, CancellationToken ct)
     {
+        if (!await CanAccessCampaign(id, ct)) return Forbid();
         await _svc.UpdateAsync(id, update, ct);
         return Ok(new { ok = true });
     }
@@ -58,6 +81,7 @@ public class CampaignsController : ControllerBase
     [Authorize(Policy = "Permission:Campaign.Manage")]
     public async Task<IActionResult> Schedule(Guid id, [FromBody] ScheduleCampaignRequest request, CancellationToken ct)
     {
+        if (!await CanAccessCampaign(id, ct)) return Forbid();
         await _svc.ScheduleAsync(id, request.ScheduledAt, ct);
         return Ok(new { ok = true, status = "scheduled" });
     }
@@ -66,6 +90,7 @@ public class CampaignsController : ControllerBase
     [Authorize(Policy = "Permission:Campaign.Manage")]
     public async Task<IActionResult> Send(Guid id, CancellationToken ct)
     {
+        if (!await CanAccessCampaign(id, ct)) return Forbid();
         var (sent, failed, total) = await _svc.SendAsync(id, ct);
         return Ok(new { sent, failed, total });
     }

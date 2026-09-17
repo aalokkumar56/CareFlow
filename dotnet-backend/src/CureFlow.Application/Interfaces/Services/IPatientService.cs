@@ -19,7 +19,7 @@ public interface IPatientService
     Task<Guid> CreateAsync(CreatePatientRequest req, CancellationToken ct = default);
     Task<PatientDetailDto> GetAsync(Guid id, CancellationToken ct = default);
     Task<PatientHolisticViewDto> GetHolisticViewAsync(Guid id, CancellationToken ct = default);
-    Task<PagedResult<PatientSummaryDto>> ListAsync(string? q, string? status, string? department, string? tag, string? inquirySource, int page, int pageSize, CancellationToken ct = default);
+    Task<PagedResult<PatientSummaryDto>> ListAsync(string? q, string? status, string? department, string? tag, string? inquirySource, int page, int pageSize, CancellationToken ct = default, string sortBy = "name", string sortDirection = "asc", bool includeAppointments = false);
     Task UpdateAsync(Guid id, UpdatePatientRequest req, CancellationToken ct = default);
     Task DeleteAsync(Guid id, CancellationToken ct = default);
     Task<ImportResult> ImportCsvAsync(Stream csv, CancellationToken ct = default);

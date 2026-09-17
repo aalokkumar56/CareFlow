@@ -6,7 +6,8 @@ namespace CureFlow.Domain.Entities;
 public class CampaignRecipient : TenantEntity
 {
     public Guid CampaignId { get; set; }
-    public Guid PatientId { get; set; }
+    public Guid? PatientId { get; set; }
+    public Guid? LeadId { get; set; }
     public string PatientName { get; set; } = string.Empty;
     public string PatientPhone { get; set; } = string.Empty;
     public RecipientStatus Status { get; set; } = RecipientStatus.Queued;

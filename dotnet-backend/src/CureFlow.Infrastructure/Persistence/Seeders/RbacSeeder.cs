@@ -100,6 +100,7 @@ public static class RbacSeeder
         var groups = new (string Name, string? Description)[]
         {
             ("Patient", "Patient CRM"),
+            ("Lead", "Prospects, imports and patient conversions"),
             ("Appointment", "Appointments"),
             ("Billing", "Billing"),
             ("User", "User management"),
@@ -231,6 +232,7 @@ public static class RbacSeeder
                 CureFlowPermissions.StaffView,
                 CureFlowPermissions.DashboardView),
             [RoleNames.Marketing] = Filter(
+                CureFlowPermissions.LeadView, CureFlowPermissions.LeadCreate, CureFlowPermissions.LeadEdit,
                 CureFlowPermissions.PatientView,
                 CureFlowPermissions.CampaignView, CureFlowPermissions.CampaignManage,
                 CureFlowPermissions.WhatsAppView, CureFlowPermissions.WhatsAppSend,

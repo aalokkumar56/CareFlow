@@ -157,6 +157,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOnboardingService, OnboardingService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
         services.AddScoped<IPatientService, PatientService>();
+        services.AddScoped<ILeadService, LeadService>();
         services.AddScoped<ILifestyleService, LifestyleService>();
         services.AddScoped<IAllergyService, AllergyService>();
         services.AddScoped<IPrescriptionService, PrescriptionService>();
@@ -212,10 +213,11 @@ public static class ServiceCollectionExtensions
                     ValidIssuer = config["Jwt:Issuer"],
                     ValidAudience = config["Jwt:Audience"],
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-                    ClockSkew = TimeSpan.FromMinutes(2),
+                    ClockSkew = TimeSpan.Zero,
                 };
             });
 
+        services.AddScoped<RefreshSessionService>();
         services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
         services.AddAuthorization(options =>
         {

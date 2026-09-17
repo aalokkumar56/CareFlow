@@ -3,6 +3,7 @@ using System;
 using CureFlow.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CureFlow.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260915181417_AddLeadsAndCampaignRecipients")]
+    partial class AddLeadsAndCampaignRecipients
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2554,33 +2557,6 @@ namespace CureFlow.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ReferringDoctors");
-                });
-
-            modelBuilder.Entity("CureFlow.Domain.Entities.RefreshSession", b =>
-                {
-                    b.Property<string>("TokenHash")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("Consumed")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("FamilyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("Revoked")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("TokenHash");
-
-                    b.HasIndex("FamilyId");
-
-                    b.ToTable("RefreshSessions");
                 });
 
             modelBuilder.Entity("CureFlow.Domain.Entities.RoleNotificationDefault", b =>

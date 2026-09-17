@@ -15,6 +15,6 @@ public record PatientDetailDto(
     string InquirySource, string? ReferralDoctor,
     DateTime? LastContactAt, DateTime? FollowUpDate,
     string? AiSummary, int? AiLeadScore,
-    DateTime CreatedAt, DateTime UpdatedAt);
+    DateTime CreatedAt, DateTime UpdatedAt, Guid? SourceLeadId = null);
 
 // ===== Lifestyle =====

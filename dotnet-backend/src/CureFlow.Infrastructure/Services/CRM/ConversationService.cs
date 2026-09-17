@@ -271,6 +271,8 @@ public class ConversationService : IConversationService
         }
 
         await _db.UpdateAsync(msg, ct: ct);
+        if (!ok)
+            throw new DomainException("WhatsApp could not confirm sending this message. Check its status before trying again.", 502);
         return msg.Id;
     }
 

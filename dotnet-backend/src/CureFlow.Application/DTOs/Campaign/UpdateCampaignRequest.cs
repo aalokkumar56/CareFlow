@@ -6,4 +6,5 @@ public record UpdateCampaignRequest(
     string? MessageBody = null,
     DateTime? ScheduledAt = null,
     bool ClearSchedule = false,
-    string? Status = null);
+    string? Status = null,
+    object? Audience = null);

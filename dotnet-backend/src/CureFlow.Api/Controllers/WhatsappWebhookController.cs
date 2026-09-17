@@ -7,6 +7,7 @@ namespace CureFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/whatsapp")]
+
 public class WhatsappWebhookController : ControllerBase
 {
     private readonly IWhatsappService _wa;
@@ -21,6 +22,7 @@ public class WhatsappWebhookController : ControllerBase
     }
 
     [HttpGet("webhook")]
+    [HttpGet("~/api/webhooks/whatsapp")]
     [AllowAnonymous]
     public IActionResult Verify(
         [FromQuery(Name = "hub.mode")] string? mode,
@@ -31,10 +33,11 @@ public class WhatsappWebhookController : ControllerBase
             return Content(challenge ?? string.Empty);
 
         _logger.LogWarning("Invalid WhatsApp webhook verification request");
-        return Forbid();
+        return Unauthorized();
     }
 
     [HttpPost("webhook")]
+    [HttpPost("~/api/webhooks/whatsapp")]
     [AllowAnonymous]
     public async Task<IActionResult> Receive(CancellationToken ct)
     {

@@ -5,6 +5,7 @@ namespace CureFlow.Application.Interfaces;
 
 public interface IAppointmentService
 {
+    Task<object> CreateFromLeadAsync(Guid leadId, BookLeadAppointmentRequest request, CancellationToken ct);
     Task<Guid> CreateAsync(Guid patientId, Guid? doctorUserId, string? doctorName, string department, DateTime scheduledAt, string? notes, CancellationToken ct = default);
     Task<AppointmentDto> GetAsync(Guid id, CancellationToken ct = default);
     Task<PagedResult<AppointmentDto>> ListAsync(string? status, DateTime? from, DateTime? to, Guid? doctorUserId, int page, int pageSize, CancellationToken ct = default);
