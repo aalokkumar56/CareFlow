@@ -15,4 +15,9 @@ public class ClinicalNote : TenantEntity
     public string Objective { get; set; } = string.Empty;
     public string Assessment { get; set; } = string.Empty;
     public string Plan { get; set; } = string.Empty;
+    public string OriginalLanguage { get; set; } = "en-IN";
+    public DateTime? FinalizedAt { get; set; }
+    public DateTime? EditableUntil { get; set; }
+    public DateTime? LastAutoSavedAt { get; set; }
+    public int Revision { get; set; } = 1;
 }

@@ -56,6 +56,7 @@ public static class CureFlowPermissions
     // Clinical
     public const string ClinicalView = "Clinical.View";
     public const string ClinicalEdit = "Clinical.Edit";
+    public const string ClinicalTranslate = "Clinical.Translate";
 
     // Dashboard & audit
     public const string DashboardView = "Dashboard.View";
@@ -78,7 +79,7 @@ public static class CureFlowPermissions
         WhatsAppView, WhatsAppSend, WhatsAppManage,
         ConversationView, ConversationManage,
         CampaignView, CampaignManage,
-        ClinicalView, ClinicalEdit,
+        ClinicalView, ClinicalEdit, ClinicalTranslate,
         DashboardView, AuditView,
         SettingsView, SettingsEdit,
         ReferralView, ReferralManage,

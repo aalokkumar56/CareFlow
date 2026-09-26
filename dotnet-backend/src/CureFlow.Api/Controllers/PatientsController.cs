@@ -53,6 +53,7 @@ public class PatientsController : ControllerBase
 
     [HttpGet("{id:guid}/holistic-view")]
     [Authorize(Policy = "Permission:Patient.View")]
+    [Authorize(Policy = "Permission:Clinical.View")]
     public async Task<IActionResult> HolisticView(Guid id, CancellationToken ct) =>
         Ok(await _svc.GetHolisticViewAsync(id, ct));
 

@@ -3,6 +3,7 @@ using System;
 using CureFlow.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CureFlow.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260920172752_DoctorNoteLifecycle")]
+    partial class DoctorNoteLifecycle
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -270,10 +273,7 @@ namespace CureFlow.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid?>("LeadId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("PatientId")
+                    b.Property<Guid>("PatientId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("PatientName")
@@ -306,8 +306,6 @@ namespace CureFlow.Infrastructure.Persistence.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("LeadId");
 
                     b.ToTable("CampaignRecipients");
                 });
@@ -1459,65 +1457,6 @@ namespace CureFlow.Infrastructure.Persistence.Migrations
                     b.ToTable("InternalNotes");
                 });
 
-            modelBuilder.Entity("CureFlow.Domain.Entities.Lead", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int?>("Age")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("ConvertedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("ConvertedPatientId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Gender")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Phone")
-                        .IsRequired()
-                        .HasMaxLength(15)
-                        .HasColumnType("character varying(15)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TenantId", "ConvertedAt");
-
-                    b.HasIndex("TenantId", "Phone")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("Leads");
-                });
-
             modelBuilder.Entity("CureFlow.Domain.Entities.Lifestyle.LifestyleProfile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2167,9 +2106,6 @@ namespace CureFlow.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("ReferringDoctorId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("SourceLeadId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("State")
                         .HasColumnType("text");
 
@@ -2190,10 +2126,6 @@ namespace CureFlow.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("SourceLeadId")
-                        .IsUnique()
-                        .HasFilter("\"SourceLeadId\" IS NOT NULL");
 
                     b.HasIndex("TenantId", "CreatedAt");
 
@@ -2570,33 +2502,6 @@ namespace CureFlow.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ReferringDoctors");
-                });
-
-            modelBuilder.Entity("CureFlow.Domain.Entities.RefreshSession", b =>
-                {
-                    b.Property<string>("TokenHash")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("Consumed")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("FamilyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("Revoked")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("TokenHash");
-
-                    b.HasIndex("FamilyId");
-
-                    b.ToTable("RefreshSessions");
                 });
 
             modelBuilder.Entity("CureFlow.Domain.Entities.RoleNotificationDefault", b =>

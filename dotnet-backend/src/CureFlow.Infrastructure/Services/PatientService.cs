@@ -101,8 +101,8 @@ public class PatientService : IPatientService
             """SELECT * FROM "LabReports" WHERE "PatientId" = @patientId ORDER BY "ReportedAt" DESC LIMIT 20""",
             new { patientId = id }, ct: ct);
         var notes = await _db.QueryAsync<ClinicalNote>(
-            """SELECT * FROM "ClinicalNotes" WHERE "PatientId" = @patientId ORDER BY "CreatedAt" DESC LIMIT 20""",
-            new { patientId = id }, ct: ct);
+            """SELECT * FROM "ClinicalNotes" WHERE "PatientId" = @patientId AND "TenantId" = @TenantId AND "IsDeleted" = false AND ("FinalizedAt" IS NOT NULL OR "AuthorUserId" = @userId) ORDER BY "CreatedAt" DESC LIMIT 20""",
+            new { patientId = id, userId = _tenant.UserId }, ct: ct);
         var med = await _db.QueryAsync<MedicalHistoryItem>(
             """SELECT * FROM "MedicalHistory" WHERE "PatientId" = @patientId""",
             new { patientId = id }, ct: ct);
@@ -273,11 +273,17 @@ public class PatientService : IPatientService
 
     public async Task<ImportResult> ImportCsvAsync(Stream csv, CancellationToken ct = default)
     {
-        using var reader = new StreamReader(csv);
-        var headerLine = await reader.ReadLineAsync(ct);
-        if (headerLine == null) return new ImportResult(0, 0, 0, []);
-
-        var header = headerLine.Split(',').Select(h => h.Trim().ToLowerInvariant()).ToArray();
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        using var reader = ExcelReaderFactory.CreateCsvReader(csv, new ExcelReaderConfiguration
+        {
+            FallbackEncoding = System.Text.Encoding.UTF8,
+            AutodetectSeparators = [','],
+        });
+        if (!reader.Read()) return new ImportResult(0, 0, 0, []);
+        string[] ReadCells() => Enumerable.Range(0, reader.FieldCount)
+            .Select(index => reader.GetValue(index)?.ToString()?.Trim() ?? "").ToArray();
+        var header = ReadCells().Select(h => h.ToLowerInvariant()).ToArray();
+        var headerLine = string.Join(",", header);
 
         // Flexible header matching
         int FindCol(string[] aliases)
@@ -288,6 +294,7 @@ public class PatientService : IPatientService
         }
         int nameIx = FindCol(["patient name", "name", "full name"]);
         int phoneIx = FindCol(["phone", "mobile", "mob", "contact", "mobile number", "phone number", "contact number"]);
+        int emailIx = FindCol(["email", "e-mail"]);
         int ageIx = FindCol(["age", "years"]);
         int genderIx = FindCol(["gender", "sex"]);
         int deptIx = FindCol(["department", "dept", "specialty"]);
@@ -307,12 +314,12 @@ public class PatientService : IPatientService
 
         await _db.TransactionAsync(async tx =>
         {
-            while (!reader.EndOfStream)
+            while (reader.Read())
             {
                 rowNum++;
-                var line = await reader.ReadLineAsync(ct);
-                if (string.IsNullOrWhiteSpace(line)) { blankRows++; continue; }
-                var c = line.Split(',');
+                ct.ThrowIfCancellationRequested();
+                var c = ReadCells();
+                if (c.All(string.IsNullOrWhiteSpace)) { blankRows++; continue; }
 
                 var name = nameIx < c.Length ? c[nameIx].Trim() : null;
                 var phoneRaw = phoneIx < c.Length ? c[phoneIx].Trim() : null;
@@ -365,6 +372,7 @@ public class PatientService : IPatientService
                 var p = new Patient
                 {
                     Name = name,
+                    Email = emailIx >= 0 && emailIx < c.Length && !string.IsNullOrWhiteSpace(c[emailIx]) ? c[emailIx] : null,
                     Phone = phone,
                     Age = age,
                     Gender = gender,

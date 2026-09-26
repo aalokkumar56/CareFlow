@@ -38,19 +38,28 @@ public class VisitService : IVisitService
 
     public async Task<Guid> CreateAsync(CreateVisitRequest req, CancellationToken ct = default)
     {
+        if (!string.IsNullOrWhiteSpace(req.DoctorNotes))
+            throw new ValidationException("Use Doctor Notes to create a draft and finish it explicitly.");
+        var patient = await _db.GetByIdAsync<Patient>(req.PatientId, ct: ct)
+            ?? throw new NotFoundException("Patient");
         if (req.AppointmentId.HasValue)
         {
+            var appointment = await _db.GetByIdAsync<Appointment>(req.AppointmentId.Value, ct: ct)
+                ?? throw new NotFoundException("Appointment");
+            if (appointment.PatientId != req.PatientId)
+                throw new ValidationException("The appointment belongs to another patient.");
             var visitWhere = SqlFragments.WhereActive<Visit>(ignoreTenant: false);
             var existing = await _db.QueryFirstOrDefaultAsync<Visit>(
                 $"""SELECT * FROM "Visits" WHERE "AppointmentId" = @appointmentId AND {visitWhere} ORDER BY "VisitDate" DESC LIMIT 1""",
                 new { appointmentId = req.AppointmentId.Value },
                 ct: ct);
             if (existing != null)
+            {
+                if (existing.PatientId != req.PatientId)
+                    throw new ValidationException("The visit belongs to another patient.");
                 return existing.Id;
+            }
         }
-
-        var patient = await _db.GetByIdAsync<Patient>(req.PatientId, ct: ct)
-            ?? throw new NotFoundException("Patient");
 
         var doctorUserId = req.DoctorUserId ?? _tenant.UserId ?? Guid.Empty;
         var doctor = await _db.GetByIdAsync<User>(doctorUserId, ct: ct);
@@ -87,8 +96,8 @@ public class VisitService : IVisitService
             """SELECT * FROM "VitalSigns" WHERE "VisitId" = @visitId ORDER BY "MeasuredAt" DESC""",
             new { visitId = id }, ct: ct);
         var notes = await _db.QueryAsync<ClinicalNote>(
-            """SELECT * FROM "ClinicalNotes" WHERE "VisitId" = @visitId ORDER BY "CreatedAt" DESC""",
-            new { visitId = id }, ct: ct);
+            """SELECT * FROM "ClinicalNotes" WHERE "VisitId" = @visitId AND "TenantId" = @TenantId AND "IsDeleted" = false AND ("FinalizedAt" IS NOT NULL OR "AuthorUserId" = @userId) ORDER BY "CreatedAt" DESC""",
+            new { visitId = id, userId = _tenant.UserId }, ct: ct);
         var rxList = await PrescriptionGraphLoader.LoadAsync(
             _db, @"""VisitId"" = @visitId", new { visitId = id },
             """ORDER BY "PrescribedAt" DESC""", ct);
@@ -127,8 +136,8 @@ public class VisitService : IVisitService
             """SELECT * FROM "VitalSigns" WHERE "PatientId" = @patientId ORDER BY "MeasuredAt" DESC""",
             new { patientId }, ct: ct)).ToList();
         var notes = (await _db.QueryAsync<ClinicalNote>(
-            """SELECT * FROM "ClinicalNotes" WHERE "PatientId" = @patientId ORDER BY "CreatedAt" DESC""",
-            new { patientId }, ct: ct)).ToList();
+            """SELECT * FROM "ClinicalNotes" WHERE "PatientId" = @patientId AND "TenantId" = @TenantId AND "IsDeleted" = false AND ("FinalizedAt" IS NOT NULL OR "AuthorUserId" = @userId) ORDER BY "CreatedAt" DESC""",
+            new { patientId, userId = _tenant.UserId }, ct: ct)).ToList();
         var prescriptions = (await PrescriptionGraphLoader.LoadAsync(
             _db, @"""PatientId"" = @patientId", new { patientId },
             """ORDER BY "PrescribedAt" DESC""", ct)).ToList();
@@ -215,7 +224,8 @@ public class VisitService : IVisitService
             ?? throw new NotFoundException("Visit");
         if (req.Symptoms != null) visit.Symptoms = req.Symptoms;
         if (req.Diagnosis != null) visit.Diagnosis = req.Diagnosis;
-        if (req.DoctorNotes != null) visit.DoctorNotes = req.DoctorNotes;
+        if (req.DoctorNotes != null)
+            throw new ValidationException("Use Doctor Notes to edit a note within its editing window.");
         if (req.FollowUpAdvice != null) visit.FollowUpAdvice = req.FollowUpAdvice;
         if (req.FollowUpDate.HasValue) visit.FollowUpDate = DateTimeHelper.EnsureUtc(req.FollowUpDate);
         if (req.Status.HasValue) visit.Status = req.Status.Value;
@@ -254,8 +264,8 @@ public class VisitService : IVisitService
             new { v.VisitId, v.RecordedByName })));
 
         var notes = await _db.QueryAsync<ClinicalNote>(
-            """SELECT * FROM "ClinicalNotes" WHERE "PatientId" = @patientId""",
-            new { patientId }, ct: ct);
+            """SELECT * FROM "ClinicalNotes" WHERE "PatientId" = @patientId AND "TenantId" = @TenantId AND "IsDeleted" = false AND ("FinalizedAt" IS NOT NULL OR "AuthorUserId" = @userId)""",
+            new { patientId, userId = _tenant.UserId }, ct: ct);
         entries.AddRange(notes.Select(n => new TimelineEntryDto(
             "clinical_note", n.CreatedAt, n.Id,
             $"Clinical Note — {n.NoteType}",
@@ -481,7 +491,9 @@ public class VisitService : IVisitService
 
     private static ClinicalNoteDto MapNote(ClinicalNote n) => new(
         n.Id, n.PatientId, n.VisitId, n.AuthorName, n.CreatedAt,
-        n.NoteType, n.Subjective, n.Objective, n.Assessment, n.Plan);
+            n.NoteType, n.Subjective, n.Objective, n.Assessment, n.Plan,
+            n.AppointmentId, n.AuthorUserId, n.OriginalLanguage, DoctorNoteRules.Status(n, DateTime.UtcNow),
+            n.FinalizedAt, n.EditableUntil, n.UpdatedAt, n.LastAutoSavedAt, n.Revision, false, DateTime.UtcNow);
 
     private static PrescriptionDto MapRx(Prescription rx) => new(
         rx.Id, rx.PatientId, rx.VisitId, rx.DoctorUserId, rx.DoctorName, rx.PrescribedAt,

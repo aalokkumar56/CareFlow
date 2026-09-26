@@ -7,7 +7,7 @@ using CureFlow.Infrastructure.Persistence.Dapper;
 
 namespace CureFlow.Infrastructure.Services.Ehr;
 
-public class ClinicalRecordService : IClinicalRecordService
+public partial class ClinicalRecordService : IClinicalRecordService
 {
     private readonly ICureFlowDbSession _db;
     private readonly ITenantContext _tenant;
@@ -51,37 +51,12 @@ public class ClinicalRecordService : IClinicalRecordService
 
     public async Task<Guid> AddNoteAsync(CreateClinicalNoteRequest r, CancellationToken ct = default)
     {
-        EnsureTenant();
-        EnsurePatientId(r.PatientId);
-        var user = await _db.GetByIdAsync<User>(_tenant.UserId ?? Guid.Empty, ct: ct);
-        var n = new ClinicalNote
-        {
-            PatientId = r.PatientId,
-            AppointmentId = r.AppointmentId,
-            VisitId = r.VisitId,
-            AuthorUserId = _tenant.UserId ?? Guid.Empty,
-            AuthorName = user?.Name ?? "User",
-            NoteType = r.NoteType ?? "progress",
-            Subjective = r.Subjective ?? "",
-            Objective = r.Objective ?? "",
-            Assessment = r.Assessment ?? "",
-            Plan = r.Plan ?? "",
-        };
-        await _db.InsertAsync(n, ct: ct);
-        return n.Id;
+        return await CreateDoctorDraftAsync(r, ct);
     }
 
     public async Task UpdateNoteAsync(Guid id, UpdateClinicalNoteRequest r, CancellationToken ct = default)
     {
-        EnsureTenant();
-        var n = await _db.GetByIdAsync<ClinicalNote>(id, ct: ct)
-            ?? throw new NotFoundException("Clinical note");
-        if (r.NoteType != null) n.NoteType = r.NoteType;
-        if (r.Subjective != null) n.Subjective = r.Subjective;
-        if (r.Objective != null) n.Objective = r.Objective;
-        if (r.Assessment != null) n.Assessment = r.Assessment;
-        if (r.Plan != null) n.Plan = r.Plan;
-        await _db.UpdateAsync(n, ct: ct);
+        await SaveDoctorNoteAsync(id, r, ct);
     }
 
     public async Task<Guid> AddMedicalHistoryAsync(CreateMedicalHistoryRequest r, CancellationToken ct = default)
@@ -137,6 +112,7 @@ public class ClinicalRecordService : IClinicalRecordService
 
     public async Task<IReadOnlyList<ClinicalNoteDto>> ListNotesAsync(Guid patientId, CancellationToken ct = default)
     {
+        EnsureTenant();
         var rows = await _db.QueryAsync<ClinicalNote>(
             """
             SELECT * FROM "ClinicalNotes"
@@ -145,9 +121,10 @@ public class ClinicalRecordService : IClinicalRecordService
             """,
             new { patientId },
             ct: ct);
-        return rows.Select(n => new ClinicalNoteDto(
-            n.Id, n.PatientId, n.VisitId, n.AuthorName, n.CreatedAt,
-            n.NoteType, n.Subjective, n.Objective, n.Assessment, n.Plan)).ToList();
+        var user = await _db.GetByIdAsync<User>(_tenant.UserId ?? Guid.Empty, ct: ct);
+        return rows.Where(n => (n.FinalizedAt != null || n.AuthorUserId == _tenant.UserId) &&
+                               (n.FinalizedAt == null || HasContent(n)))
+            .Select(n => MapDoctorNote(n, user)).ToList();
     }
 
     public async Task<IReadOnlyList<MedicalHistoryDto>> ListMedicalHistoryAsync(Guid patientId, CancellationToken ct = default)

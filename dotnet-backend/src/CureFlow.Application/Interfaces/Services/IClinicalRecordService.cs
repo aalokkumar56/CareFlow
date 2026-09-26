@@ -9,6 +9,7 @@ public interface IClinicalRecordService
     Task<Guid> AddVitalsAsync(CreateVitalSignsRequest req, CancellationToken ct = default);
     Task<Guid> AddNoteAsync(CreateClinicalNoteRequest req, CancellationToken ct = default);
     Task UpdateNoteAsync(Guid id, UpdateClinicalNoteRequest req, CancellationToken ct = default);
+    Task<ClinicalNoteDto> GetNoteAsync(Guid id, CancellationToken ct = default);
     Task<Guid> AddMedicalHistoryAsync(CreateMedicalHistoryRequest req, CancellationToken ct = default);
     Task<Guid> AddFamilyHistoryAsync(CreateFamilyHistoryRequest req, CancellationToken ct = default);
 

@@ -214,7 +214,7 @@ public static class RbacSeeder
             [RoleNames.Doctor] = Filter(
                 CureFlowPermissions.PatientView, CureFlowPermissions.PatientEdit,
                 CureFlowPermissions.AppointmentView, CureFlowPermissions.AppointmentCreate, CureFlowPermissions.AppointmentEdit,
-                CureFlowPermissions.ClinicalView, CureFlowPermissions.ClinicalEdit,
+                CureFlowPermissions.ClinicalView, CureFlowPermissions.ClinicalEdit, CureFlowPermissions.ClinicalTranslate,
                 CureFlowPermissions.ConversationView,
                 CureFlowPermissions.StaffView,
                 CureFlowPermissions.DashboardView),

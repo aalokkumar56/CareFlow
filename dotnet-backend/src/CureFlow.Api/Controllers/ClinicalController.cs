@@ -8,6 +8,7 @@ namespace CureFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/clinical")]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public class ClinicalController : ControllerBase
 {
     private readonly IClinicalRecordService _svc;
@@ -43,7 +44,7 @@ public class ClinicalController : ControllerBase
     public async Task<IActionResult> AddNote([FromBody] CreateClinicalNoteRequest r, CancellationToken ct)
     {
         var id = await _svc.AddNoteAsync(r, ct);
-        return Ok(new { id });
+        return Ok(await _svc.GetNoteAsync(id, ct));
     }
 
     [HttpGet("notes/patient/{patientId:guid}")]
@@ -56,8 +57,13 @@ public class ClinicalController : ControllerBase
     public async Task<IActionResult> UpdateNote(Guid id, [FromBody] UpdateClinicalNoteRequest r, CancellationToken ct)
     {
         await _svc.UpdateNoteAsync(id, r, ct);
-        return Ok(new { ok = true });
+        return Ok(await _svc.GetNoteAsync(id, ct));
     }
+
+    [HttpGet("notes/{id:guid}")]
+    [Authorize(Policy = "Permission:Clinical.View")]
+    public async Task<IActionResult> GetNote(Guid id, CancellationToken ct) =>
+        Ok(await _svc.GetNoteAsync(id, ct));
 
     [HttpPost("medical-history")]
     [Authorize(Policy = "Permission:Clinical.Edit")]

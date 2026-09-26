@@ -157,6 +157,9 @@ venv/
 
 .cache/
 
+# Temporary isolated outputs used when verifying a running .NET application.
+**/_codex_verify_build/
+
 # =============================================================================
 # Deployment
 # =============================================================================
