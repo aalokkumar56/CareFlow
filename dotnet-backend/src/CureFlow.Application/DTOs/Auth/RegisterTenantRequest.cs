@@ -3,4 +3,4 @@ using CureFlow.Domain.Enums;
 
 namespace CureFlow.Application.DTOs;
 
-public record RegisterTenantRequest(string HospitalName, string AdminName, string AdminEmail, string AdminPassword, string? Phone);
+public record RegisterTenantRequest(string HospitalName, string AdminName, string AdminEmail, string AdminPassword, string? Phone, TenantType TenantType = TenantType.Hospital);

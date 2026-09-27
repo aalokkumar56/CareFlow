@@ -87,6 +87,7 @@ public class AuthService : IAuthService
         {
             Slug = slug,
             Name = req.HospitalName,
+            TenantType = req.TenantType,
             ContactName = req.AdminName,
             ContactEmail = email,
             ContactPhone = req.Phone,

@@ -32,6 +32,9 @@ builder.Services.AddCureFlowApi(builder.Configuration);
 builder.Services.AddCureFlowInfrastructure(builder.Configuration);
 builder.Services.AddCureFlowAuthentication(builder.Configuration);
 
+builder.Services.AddScoped<CureFlow.Infrastructure.Areas.Platform.PlatformAccess>();
+builder.Services.AddScoped<CureFlow.Infrastructure.Areas.Platform.PlatformAdminService>();
+builder.Services.AddScoped<CureFlow.Infrastructure.Areas.Platform.TenantApiActivityService>();
 var app = builder.Build();
 app.UseCureFlowRequestPipeline();
 
@@ -50,6 +53,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 
     // Permissions catalog — lightweight, required in every environment.
     await RbacSeeder.SeedAsync(session);
+    await CureFlow.Infrastructure.Areas.Platform.PlatformSeeder.SeedAsync(session);
 
     // Demo / E2E data — local/dev only. Production uses one-time /platform/auth/bootstrap.
     if (builder.Configuration.GetValue("Database:Seed", defaultValue: false)

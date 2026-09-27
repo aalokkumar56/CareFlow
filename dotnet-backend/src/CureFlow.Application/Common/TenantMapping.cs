@@ -9,6 +9,7 @@ public static class TenantMapping
         tenant.Id,
         tenant.Slug,
         tenant.Name,
+        tenant.TenantType,
         tenant.Plan,
         tenant.SubscriptionStatus,
         tenant.LifecycleStatus,

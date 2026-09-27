@@ -7,6 +7,7 @@ public record TenantDto(
     Guid Id,
     string Slug,
     string Name,
+    TenantType TenantType,
     SubscriptionPlan Plan,
     SubscriptionStatus Status,
     TenantLifecycleStatus LifecycleStatus,

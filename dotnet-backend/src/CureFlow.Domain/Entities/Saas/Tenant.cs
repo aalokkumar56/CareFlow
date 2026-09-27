@@ -8,6 +8,7 @@ public class Tenant : BaseEntity
 {
     public string Slug { get; set; } = string.Empty;
     public string Name { get; set; } = "Hospital";
+    public TenantType TenantType { get; set; } = TenantType.Hospital;
     public string? ContactName { get; set; }
     public string? ContactEmail { get; set; }
     public string? ContactPhone { get; set; }

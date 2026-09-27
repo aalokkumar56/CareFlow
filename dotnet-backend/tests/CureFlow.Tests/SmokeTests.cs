@@ -21,7 +21,7 @@ public class SmokeTests
     {
         var u = new UserDto(Guid.Empty, "n", "e", UserRole.Admin, true, null, null);
         var t = new TenantDto(
-            Guid.Empty, "s", "n", SubscriptionPlan.Trial, SubscriptionStatus.Trialing,
+            Guid.Empty, "s", "n", TenantType.Hospital, SubscriptionPlan.Trial, SubscriptionStatus.Trialing,
             TenantLifecycleStatus.Active, null, DateTime.UtcNow, true, "Asia/Kolkata", DateTime.UtcNow);
         var a = new AuthResponse("tok", u, t);
         a.AccessToken.Should().Be("tok");

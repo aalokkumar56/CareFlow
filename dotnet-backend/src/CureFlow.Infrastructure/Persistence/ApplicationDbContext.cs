@@ -5,6 +5,7 @@ using CureFlow.Domain.Entities.Ehr;
 using CureFlow.Domain.Entities.Lifestyle;
 using CureFlow.Domain.Entities.Rbac;
 using CureFlow.Domain.Entities.Saas;
+using CureFlow.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
@@ -30,9 +31,18 @@ public class ApplicationDbContext : DbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<PlatformRole> PlatformRoles => Set<PlatformRole>();
+    public DbSet<PlatformCommand> PlatformCommands => Set<PlatformCommand>();
+    public DbSet<TenantApiActivity> TenantApiActivities => Set<TenantApiActivity>();
+    public DbSet<PlanModule> PlanModules => Set<PlanModule>();
     public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();
     public DbSet<TenantOnboardingState> TenantOnboardingStates => Set<TenantOnboardingState>();
     public DbSet<PlatformAuditLog> PlatformAuditLogs => Set<PlatformAuditLog>();
+    public DbSet<PlatformModule> PlatformModules => Set<PlatformModule>();
+    public DbSet<TenantEntitlement> TenantEntitlements => Set<TenantEntitlement>();
+    public DbSet<Facility> Facilities => Set<Facility>();
+    public DbSet<PlatformOperationJob> PlatformOperationJobs => Set<PlatformOperationJob>();
+    public DbSet<PlatformSupportSession> PlatformSupportSessions => Set<PlatformSupportSession>();
 
     // CRM core
     public DbSet<Patient> Patients => Set<Patient>();
@@ -148,7 +158,23 @@ public class ApplicationDbContext : DbContext
         mb.Entity<CampaignRecipient>().HasIndex(r => r.LeadId);
         mb.Entity<Tenant>().HasIndex(t => t.Slug).IsUnique();
         mb.Entity<Tenant>().HasIndex(t => t.LifecycleStatus);
+        mb.Entity<Tenant>().Property(t => t.TenantType).HasDefaultValue(TenantType.Hospital);
         mb.Entity<PlatformUser>().HasIndex(p => p.Email).IsUnique();
+        mb.Entity<PlatformUser>().Property(p => p.Role).HasDefaultValue("owner");
+        mb.Entity<PlatformRole>().HasIndex(p => p.Key).IsUnique();
+        mb.Entity<PlanModule>().HasIndex(p => new { p.Plan, p.PlatformModuleId }).IsUnique();
+        mb.Entity<PlanModule>().HasOne<PlatformModule>().WithMany().HasForeignKey(p => p.PlatformModuleId).OnDelete(DeleteBehavior.Restrict);
+        mb.Entity<TenantApiActivity>().HasIndex(p => new { p.TenantId, p.CreatedAt });
+        mb.Entity<TenantApiActivity>().HasIndex(p => new { p.StatusCode, p.CreatedAt });
+        mb.Entity<PlatformModule>().HasIndex(p => p.Key).IsUnique();
+        mb.Entity<PlatformCommand>().HasIndex(p => new { p.ActorId, p.RequestId }).IsUnique();
+        mb.Entity<TenantEntitlement>().HasIndex(p => new { p.TenantId, p.PlatformModuleId }).IsUnique();
+        mb.Entity<Facility>().HasIndex(p => p.TenantId).IsUnique().HasFilter("\"IsPrimary\" = true AND \"IsDeleted\" = false");
+        mb.Entity<Facility>().HasOne<Tenant>().WithMany().HasForeignKey(p => p.TenantId).OnDelete(DeleteBehavior.Restrict);
+        mb.Entity<TenantEntitlement>().HasOne<Tenant>().WithMany().HasForeignKey(p => p.TenantId).OnDelete(DeleteBehavior.Restrict);
+        mb.Entity<TenantEntitlement>().HasOne<PlatformModule>().WithMany().HasForeignKey(p => p.PlatformModuleId).OnDelete(DeleteBehavior.Restrict);
+        mb.Entity<PlatformSupportSession>().HasOne<Tenant>().WithMany().HasForeignKey(p => p.TenantId).OnDelete(DeleteBehavior.Restrict);
+        mb.Entity<PlatformSupportSession>().HasOne<PlatformUser>().WithMany().HasForeignKey(p => p.PlatformUserId).OnDelete(DeleteBehavior.Restrict);
         mb.Entity<TenantOnboardingState>().HasIndex(o => o.TenantId).IsUnique();
         mb.Entity<User>().HasIndex(u => new { u.TenantId, u.Email }).IsUnique();
         mb.Entity<Patient>().HasIndex(p => new { p.TenantId, p.Phone });

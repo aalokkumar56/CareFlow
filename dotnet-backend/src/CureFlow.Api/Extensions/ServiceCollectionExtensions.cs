@@ -270,12 +270,14 @@ public static class ServiceCollectionExtensions
         app.UseSerilogRequestLogging();
         app.UseCors();
         app.UseRateLimiter();
+        app.UseMiddleware<TenantApiActivityMiddleware>();
         app.UseMiddleware<ExceptionMiddleware>();
         app.UseMiddleware<TenantResolutionMiddleware>();
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseMiddleware<TenantMiddleware>();
         app.UseMiddleware<TenantLifecycleMiddleware>();
+        app.UseMiddleware<CureFlow.Api.Areas.Platform.EntitlementMiddleware>();
         app.MapControllers();
 
         return app;
