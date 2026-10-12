@@ -3,6 +3,25 @@ namespace CureFlow.Application.Common;
 /// <summary>Canonical permission codes used for RBAC policies and JWT claims.</summary>
 public static class CureFlowPermissions
 {
+    public const string FollowUpView = "FollowUp.View";
+    public const string FollowUpManage = "FollowUp.Manage";
+    public const string FollowUpComplete = "FollowUp.Complete";
+    public const string FollowUpEscalate = "FollowUp.Escalate";
+    public const string PatientExport = "Patient.Export";
+    public const string PatientImport = "Patient.Import";
+    public const string PatientRestrictedView = "PatientRestricted.View";
+    public const string PatientAlertsView = "PatientAlerts.View";
+    public const string PatientAlertsManage = "PatientAlerts.Manage";
+    public const string PatientIdentityVerify = "PatientIdentity.Verify";
+    public const string IdentityMergeReverse = "IdentityMerge.Reverse";
+    public const string IdentityMergeView = "IdentityMerge.View";
+    public const string IdentityMergeManage = "IdentityMerge.Manage";
+    public const string IdentityReviewView = "IdentityReview.View";
+    public const string IdentityReviewManage = "IdentityReview.Manage";
+    public const string OrganizationView = "Organization.View";
+    public const string OrganizationManage = "Organization.Manage";
+    public const string JobView = "Job.View";
+    public const string JobRetry = "Job.Retry";
     public const string ClaimType = "permission";
     public const string LeadView = "Lead.View";
     public const string LeadCreate = "Lead.Create";
@@ -70,6 +89,7 @@ public static class CureFlowPermissions
 
     public static readonly IReadOnlyList<string> All =
     [
+        FollowUpView, FollowUpManage, FollowUpComplete, FollowUpEscalate,
         LeadView, LeadCreate, LeadEdit, LeadDelete, LeadConvert,
         PatientView, PatientCreate, PatientEdit, PatientDelete,
         AppointmentView, AppointmentCreate, AppointmentEdit, AppointmentDelete,
@@ -80,7 +100,7 @@ public static class CureFlowPermissions
         ConversationView, ConversationManage,
         CampaignView, CampaignManage,
         ClinicalView, ClinicalEdit, ClinicalTranslate,
-        DashboardView, AuditView,
+        DashboardView, AuditView, JobView, JobRetry, OrganizationView, OrganizationManage, IdentityReviewView, IdentityReviewManage, IdentityMergeView, IdentityMergeManage, IdentityMergeReverse, PatientIdentityVerify, PatientExport, PatientImport, PatientRestrictedView, PatientAlertsView, PatientAlertsManage,
         SettingsView, SettingsEdit,
         ReferralView, ReferralManage,
     ];
@@ -124,3 +144,6 @@ public static class RoleNames
         SuperAdmin, Admin, Receptionist, Doctor, Nurse, Marketing, Staff, Viewer,
     ];
 }
+
+
+

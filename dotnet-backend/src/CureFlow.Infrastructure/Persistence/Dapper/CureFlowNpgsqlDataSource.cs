@@ -6,9 +6,9 @@ public static class CureFlowNpgsqlDataSource
 {
     /// <summary>
     /// Hardens connection strings for cloud Postgres (Neon/Render) and Npgsql 10:
-    /// disable GSS (missing libgssapi in .NET images), require SSL off-localhost,
+    /// disable GSS (missing libgssapi in .NET images), verify TLS off-localhost,
     /// and raise timeouts so cold-start DBs can wake before migrate fails.
-    /// Explicit connection-string values are left unchanged.
+    /// Remote connections cannot opt out of certificate and hostname validation.
     /// </summary>
     public static string Normalize(string connectionString)
     {
@@ -20,15 +20,18 @@ public static class CureFlowNpgsqlDataSource
             builder.GssEncryptionMode = GssEncryptionMode.Disable;
         }
 
-        var host = builder.Host ?? string.Empty;
+        var host = (builder.Host ?? string.Empty).Trim().ToLowerInvariant();
         var isLocal = host is "localhost" or "127.0.0.1" or "::1" or "postgres";
         if (!isLocal
             && !HasKey(connectionString, "SSL Mode")
             && !HasKey(connectionString, "Ssl Mode")
             && !HasKey(connectionString, "SslMode"))
         {
-            builder.SslMode = SslMode.Require;
+            builder.SslMode = SslMode.VerifyFull;
         }
+
+        if (!isLocal && builder.SslMode != SslMode.VerifyFull)
+            throw new InvalidOperationException("Remote PostgreSQL connections require SSL Mode=VerifyFull.");
 
         if (!HasKey(connectionString, "Timeout") && builder.Timeout < 60)
             builder.Timeout = 60;

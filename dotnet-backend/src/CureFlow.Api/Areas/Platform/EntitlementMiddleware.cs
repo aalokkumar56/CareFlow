@@ -10,7 +10,7 @@ public sealed class EntitlementMiddleware(RequestDelegate next)
   if(tenant.TenantId!=Guid.Empty && context.User.Identity?.IsAuthenticated==true && !context.User.HasClaim("platform_user","true")) {
    var required=SupportedModules.RequiredForApi(context.Request.Path.Value??"");
    if(required.Length>0) {
-    var modules=await PlatformModuleAccess.ResolveAsync(db,tenant.TenantId);
+    var modules=await PlatformModuleAccess.ResolveAsync(db,tenant.TenantId,context.RequestAborted);
     if(required.Any(key=>!modules.Any(m=>m.Key==key&&m.Effective)))
      throw new DomainException("This module is not enabled for your account. Contact your administrator.",403);
    }

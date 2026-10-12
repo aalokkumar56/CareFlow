@@ -27,7 +27,9 @@ public static class DoctorNoteRules
             throw new ForbiddenException("Only the originating doctor can edit within the editing window.");
         if (patientId != note.PatientId || visitId != note.VisitId || appointmentId != note.AppointmentId)
             throw new ValidationException("The patient, visit or appointment does not match this note.");
+        if (!revision.HasValue)
+            throw new DomainException("Supply the current record version before saving.", 428);
         if (revision != note.Revision)
-            throw new ConflictException("This note changed in another session. Review the latest version before saving.");
+            throw new DomainException("This note changed in another session. Review the latest version before saving.", 412);
     }
 }

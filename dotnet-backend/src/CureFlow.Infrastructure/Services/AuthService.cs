@@ -13,6 +13,7 @@ namespace CureFlow.Infrastructure.Services;
 public class AuthService : IAuthService
 {
     private readonly ICureFlowDbSession _db;
+    private readonly IIdentityDbSession _identity;
     private readonly IPasswordHasher _hasher;
     private readonly IJwtTokenService _jwt;
     private readonly ITenantContext _tenant;
@@ -20,63 +21,55 @@ public class AuthService : IAuthService
     private readonly IUserPermissionService _permissions;
     private readonly ILogger<AuthService> _logger;
 
-    public AuthService(ICureFlowDbSession db, IPasswordHasher hasher, IJwtTokenService jwt,
+    public AuthService(ICureFlowDbSession db, IIdentityDbSession identity, IPasswordHasher hasher, IJwtTokenService jwt,
         ITenantContext tenant, IAuditService audit, IUserPermissionService permissions, ILogger<AuthService> logger)
     {
-        _db = db; _hasher = hasher; _jwt = jwt; _tenant = tenant; _audit = audit; _permissions = permissions; _logger = logger;
+        _db = db; _identity = identity; _hasher = hasher; _jwt = jwt; _tenant = tenant; _audit = audit; _permissions = permissions; _logger = logger;
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest req, CancellationToken ct = default)
     {
-        var user = await _db.QueryFirstOrDefaultAsync<User>(
-            """
-            SELECT * FROM "Users"
-            WHERE "Email" = @Email AND "IsActive" = true AND "IsDeleted" = false
-            LIMIT 1
-            """,
-            new { Email = req.Email.ToLower() },
-            ignoreTenant: true,
-            ct);
-
-        if (user == null || !_hasher.Verify(req.Password, user.PasswordHash))
-            throw new DomainException("Invalid email or password", 401);
-
-        var tenant = await _db.QueryFirstOrDefaultAsync<Tenant>(
-            """
-            SELECT * FROM "Tenants"
-            WHERE "Id" = @Id AND "IsDeleted" = false
-            LIMIT 1
-            """,
-            new { Id = user.TenantId },
-            ignoreTenant: true,
-            ct);
-        if (tenant == null) throw new DomainException("Hospital account not found", 403);
-
-        if (tenant.LifecycleStatus == TenantLifecycleStatus.Rejected)
-            throw new DomainException(
-                string.IsNullOrWhiteSpace(tenant.RejectionReason)
-                    ? "Your hospital registration was not approved."
-                    : $"Your hospital registration was not approved: {tenant.RejectionReason}",
-                403);
-
-        if (tenant.LifecycleStatus == TenantLifecycleStatus.Suspended || !tenant.IsActive)
-            throw new DomainException("Hospital account suspended. Contact CureFlow support.", 403);
-
-        user.LastLoginAt = DateTime.UtcNow;
-        await _permissions.AssignLegacyRoleAsync(user, ct);
-        await _db.UpdateAsync(user, ignoreTenant: true, ct);
-
-        var permissionCodes = await _permissions.GetPermissionCodesAsync(user, ct);
-        var token = _jwt.Issue(user.Id, user.TenantId, user.Email, user.Role.ToString(), permissionCodes);
-        return new AuthResponse(token, MapUser(user, permissionCodes), TenantMapping.ToDto(tenant));
+        AuthResponse? result = null;
+        await _identity.TransactionAsync(async store =>
+        {
+            var matchingUsers = await store.QueryAsync<User>("""
+                SELECT u.* FROM "Users" u JOIN "Tenants" t ON t."Id"=u."TenantId"
+                WHERE u."Email"=@email AND u."IsActive" AND NOT u."IsDeleted" AND NOT t."IsDeleted"
+                  AND (@slug IS NULL OR t."Slug"=@slug)
+                ORDER BY u."Id" LIMIT 2 FOR UPDATE OF u
+                """, new { email = req.Email.ToLowerInvariant(),
+                    slug = string.IsNullOrWhiteSpace(req.TenantSlug) ? null : req.TenantSlug.Trim().ToLowerInvariant() },
+                ignoreTenant: true, ct: ct);
+            var user = matchingUsers.Count == 1 ? matchingUsers[0] : null;
+            if (user is null || !_hasher.Verify(req.Password, user.PasswordHash))
+                throw new DomainException("Invalid email or password", 401);
+            var hospital = await store.QueryFirstOrDefaultAsync<Tenant>("""
+                SELECT * FROM "Tenants" WHERE "Id"=@id AND NOT "IsDeleted"
+                """, new { id = user.TenantId }, ignoreTenant: true, ct: ct)
+                ?? throw new DomainException("Hospital account unavailable", 403);
+            if (!hospital.IsActive || hospital.LifecycleStatus is TenantLifecycleStatus.Rejected or TenantLifecycleStatus.Suspended)
+                throw new DomainException("Hospital account unavailable. Contact support.", 403);
+            await _permissions.AssignLegacyRoleAsync(user, ct, store);
+            // Update only login metadata; never overwrite a concurrent security field with a stale entity.
+            await store.ExecuteAsync("""
+                UPDATE "Users" SET "LastLoginAt"=CURRENT_TIMESTAMP,"UpdatedAt"=CURRENT_TIMESTAMP WHERE "Id"=@id
+                """, new { id = user.Id }, ignoreTenant: true, ct: ct);
+            user = await store.QueryFirstOrDefaultAsync<User>("""SELECT * FROM "Users" WHERE "Id"=@id""",
+                new { id = user.Id }, ignoreTenant: true, ct: ct) ?? throw new DomainException("Session unavailable", 401);
+            var codes = await _permissions.GetPermissionCodesAsync(user, ct, store);
+            // Only StartAsync creates a persisted family and issues an externally usable access token.
+            result = new AuthResponse(string.Empty, MapUser(user, codes), TenantMapping.ToDto(hospital))
+                { ValidatedSecurityRevision = user.SecurityRevision };
+        }, ct, ignoreTenant: true);
+        return result!;
     }
-
     public async Task<TenantDto> RegisterTenantAsync(RegisterTenantRequest req, CancellationToken ct = default)
     {
+        if (!Enum.IsDefined(req.TenantType)) throw new ValidationException("Select a supported organization type.");
         var slug = await ResolveUniqueSlugAsync(req.HospitalName, ct);
         var email = req.AdminEmail.ToLower();
 
-        if (await _db.QueryFirstOrDefaultAsync<int?>(
+        if (await _identity.QueryFirstOrDefaultAsync<int?>(
                 """SELECT 1 FROM "Users" WHERE "Email" = @Email AND "IsDeleted" = false LIMIT 1""",
                 new { Email = email },
                 ignoreTenant: true,
@@ -95,6 +88,7 @@ public class AuthService : IAuthService
             SubscriptionStatus = SubscriptionStatus.Trialing,
             TrialEndsAt = DateTime.UtcNow.AddDays(14),
             LifecycleStatus = TenantLifecycleStatus.PendingApproval,
+            SubmittedAt = DateTime.UtcNow,
             OnboardingComplete = false,
             IsActive = true,
         };
@@ -108,17 +102,19 @@ public class AuthService : IAuthService
             Phone = req.Phone,
         };
 
-        await _db.TransactionAsync(async session =>
+        await _identity.TransactionAsync(async session =>
         {
             await session.InsertAsync(tenant, ignoreTenant: true, ct);
             admin.TenantId = tenant.Id;
             await session.InsertAsync(admin, ignoreTenant: true, ct);
             await session.InsertAsync(new HospitalProfile { TenantId = tenant.Id, Name = req.HospitalName }, ignoreTenant: true, ct);
             await session.InsertAsync(new TenantOnboardingState { TenantId = tenant.Id }, ignoreTenant: true, ct);
-        }, ct);
+            await _permissions.AssignLegacyRoleAsync(admin, ct, session);
+            await TemplatePlaceholderSeeder.SeedForTenantAsync(session, tenant, ct);
+        }, ct, ignoreTenant: true);
 
-        await _permissions.AssignLegacyRoleAsync(admin, ct);
-        await TemplatePlaceholderSeeder.SeedForTenantAsync(_db, tenant, ct);
+
+
         _logger.LogInformation("Registered tenant {slug} pending approval", tenant.Slug);
         return TenantMapping.ToDto(tenant);
     }
@@ -195,7 +191,7 @@ public class AuthService : IAuthService
         for (var attempt = 1; attempt < 100; attempt++)
         {
             var candidate = TenantSlugHelper.WithSuffix(baseSlug, attempt);
-            var taken = await _db.QueryFirstOrDefaultAsync<int?>(
+            var taken = await _identity.QueryFirstOrDefaultAsync<int?>(
                 """SELECT 1 FROM "Tenants" WHERE "Slug" = @Slug AND "IsDeleted" = false LIMIT 1""",
                 new { Slug = candidate },
                 ignoreTenant: true,
@@ -207,3 +203,8 @@ public class AuthService : IAuthService
         throw new ValidationException("Could not generate a unique hospital slug. Try a different name.");
     }
 }
+
+
+
+
+

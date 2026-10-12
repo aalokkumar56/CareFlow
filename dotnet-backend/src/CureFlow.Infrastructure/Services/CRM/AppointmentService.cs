@@ -1,4 +1,4 @@
-﻿using CureFlow.Application.Common;
+using CureFlow.Application.Common;
 using CureFlow.Application.DTOs;
 using CureFlow.Application.Interfaces;
 using CureFlow.Application.Notifications;
@@ -39,121 +39,11 @@ public class AppointmentService : IAppointmentService
         _notifications = notifications;
     }
 
-    public async Task<Guid> CreateAsync(Guid patientId, Guid? doctorUserId, string? doctorName, string department,
+    public Task<Guid> CreateAsync(Guid patientId, Guid? doctorUserId, string? doctorName, string department,
         DateTime scheduledAt, string? notes, CancellationToken ct = default)
-    {
-        if (!doctorUserId.HasValue)
-            throw new ValidationException("Select a doctor from Hospital Staff");
-
-        var (doctor, profile) = await ResolveStaffDoctorAsync(doctorUserId.Value, ct);
-        var patientWhere = SqlFragments.WhereActive<Patient>(ignoreTenant: false);
-        var p = await _db.QueryFirstOrDefaultAsync<Patient>(
-            $"""SELECT * FROM "Patients" WHERE "Id" = @patientId AND {patientWhere}""",
-            new { patientId },
-            ct: ct) ?? throw new NotFoundException("Patient");
-
-        var resolvedDepartment = !string.IsNullOrWhiteSpace(department)
-            ? department.Trim()
-            : (profile.Department ?? doctor.Specialty ?? "General Medicine");
-
-        var a = new Appointment
-        {
-            PatientId = patientId,
-            PatientName = p.Name,
-            PatientPhone = p.Phone,
-            DoctorUserId = doctorUserId,
-            DoctorName = doctor.Name,
-            Department = resolvedDepartment,
-            ScheduledAt = DateTimeHelper.EnsureUtc(scheduledAt),
-            Notes = notes,
-            ConsultationFee = profile.ConsultationFee,
-        };
-        await _db.InsertAsync(a, ct: ct);
-
-        p.Status = LeadStatus.AppointmentScheduled;
-        await _db.UpdateAsync(p, ct: ct);
-
-        await TrySendAppointmentMessageAsync(AppointmentTemplateKeys.Confirmation, p, a, DefaultConfirmationBody, ct);
-
-        var firstName = p.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? p.Name;
-        await _notifications.PublishAsync(new NotificationPublishRequest(
-            NotificationTypeCodes.AppointmentCreated,
-            "New appointment",
-            $"{firstName} scheduled with {a.DoctorName}",
-            NotificationSeverity.Info,
-            EntityType: "appointment",
-            EntityId: a.Id,
-            ActionUrl: $"/appointments?id={a.Id}",
-            DoctorUserId: a.DoctorUserId,
-            CreatorUserId: _db.UserId), ct);
-
-        return a.Id;
-    }
-
-    public async Task<object> CreateFromLeadAsync(Guid leadId, BookLeadAppointmentRequest request, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 200)
-            throw new ValidationException("Enter the patient's full name (up to 200 characters).");
-        if (request.ScheduledAt == default)
-            throw new ValidationException("Choose an appointment date and time.");
-        var (doctor, profile) = await ResolveStaffDoctorAsync(request.DoctorUserId, ct);
-        Patient? patient = null;
-        Appointment? appointment = null;
-        await _db.TransactionAsync(async session =>
-        {
-            var lead = await session.QueryFirstOrDefaultAsync<Lead>("""
-                SELECT * FROM "Leads" WHERE "Id" = @leadId AND "TenantId" = @TenantId AND NOT "IsDeleted" FOR UPDATE
-                """, new { leadId }, ct: ct) ?? throw new NotFoundException("Lead");
-            if (lead.ConvertedAt.HasValue || !lead.IsActive)
-                throw new ValidationException("This lead is already converted or inactive.");
-            if (request.PatientId.HasValue)
-            {
-                patient = await session.QueryFirstOrDefaultAsync<Patient>("""
-                    SELECT * FROM "Patients" WHERE "Id" = @id AND "TenantId" = @TenantId AND NOT "IsDeleted" FOR UPDATE
-                    """, new { id = request.PatientId.Value }, ct: ct) ?? throw new NotFoundException("Patient");
-                if (WhatsappPhoneHelper.Normalize(patient.Phone) != lead.Phone)
-                    throw new ValidationException("The selected patient must have the lead's phone number.");
-                if (patient.SourceLeadId.HasValue && patient.SourceLeadId != lead.Id)
-                    throw new ValidationException("This patient is already linked to another lead.");
-            }
-            else
-            {
-                // A shared phone does not identify a person. Staff explicitly select an existing
-                // patient when both the name and number already match.
-                var candidates = await session.QueryAsync<Patient>("""
-                    SELECT * FROM "Patients" WHERE "TenantId" = @TenantId AND NOT "IsDeleted" AND LOWER(BTRIM("Name")) = LOWER(@name)
-                    """, new { name = request.Name.Trim() }, ct: ct);
-                if (candidates.Any(p => WhatsappPhoneHelper.Normalize(p.Phone) == lead.Phone))
-                    throw new ValidationException("A patient with this name and phone already exists. Select that patient to book the appointment.");
-                patient = new Patient { Name = request.Name.Trim(), Phone = lead.Phone, Age = lead.Age, Gender = lead.Gender, InquirySource = "lead_conversion", SourceLeadId = lead.Id };
-                await session.InsertAsync(patient, ct: ct);
-            }
-            patient.SourceLeadId = lead.Id;
-            patient.Status = LeadStatus.AppointmentScheduled;
-            await session.UpdateAsync(patient, ct: ct);
-            appointment = new Appointment
-            {
-                PatientId = patient.Id, PatientName = patient.Name, PatientPhone = patient.Phone,
-                DoctorUserId = doctor.Id, DoctorName = doctor.Name,
-                Department = string.IsNullOrWhiteSpace(request.Department) ? profile.Department ?? doctor.Specialty ?? "General Medicine" : request.Department.Trim(),
-                ScheduledAt = DateTimeHelper.EnsureUtc(request.ScheduledAt), Notes = request.Notes,
-                ConsultationFee = profile.ConsultationFee
-            };
-            await session.InsertAsync(appointment, ct: ct);
-            lead.ConvertedAt = DateTime.UtcNow;
-            lead.ConvertedPatientId = patient.Id;
-            lead.IsActive = false;
-            await session.UpdateAsync(lead, ct: ct);
-        }, ct);
-        await TrySendAppointmentMessageAsync(AppointmentTemplateKeys.Confirmation, patient!, appointment!, DefaultConfirmationBody, ct);
-        await _notifications.PublishAsync(new NotificationPublishRequest(
-            NotificationTypeCodes.AppointmentCreated, "Lead converted to patient",
-            $"{patient!.Name} scheduled with {appointment!.DoctorName}", NotificationSeverity.Info,
-            EntityType: "appointment", EntityId: appointment.Id, ActionUrl: $"/appointments?id={appointment.Id}",
-            DoctorUserId: appointment.DoctorUserId, CreatorUserId: _db.UserId), ct);
-        return new { patientId = patient.Id, appointmentId = appointment.Id };
-    }
-
+        =>throw new ConflictException("Create a current explicit facility/resource hold, then book through /api/appointment-bookings with Idempotency-Key.");
+    public Task<object> CreateFromLeadAsync(Guid leadId, BookLeadAppointmentRequest request, CancellationToken ct)
+        =>throw new ConflictException("Convert the lead through /api/leads/{id}/conversion with reviewed identity evidence, then book its patient through the appointment API.");
     public async Task<AppointmentDto> GetAsync(Guid id, CancellationToken ct = default)
     {
         var where = SqlFragments.WhereActive<Appointment>(ignoreTenant: false);
@@ -219,7 +109,8 @@ public class AppointmentService : IAppointmentService
         var a = await _db.QueryFirstOrDefaultAsync<Appointment>(
             $"""SELECT * FROM "Appointments" WHERE "Id" = @id AND {where}""",
             new { id },
-            ct: ct) ?? throw new NotFoundException("Appointment");
+            ct: ct) ?? throw new NotFoundException("Appointment");
+        if(a.ReservationId.HasValue)throw new ConflictException("Reserved appointments require the revisioned booking transition API.");
 
         var oldScheduledAt = a.ScheduledAt;
         var oldDoctorUserId = a.DoctorUserId;
@@ -272,7 +163,8 @@ public class AppointmentService : IAppointmentService
         var a = await _db.QueryFirstOrDefaultAsync<Appointment>(
             $"""SELECT * FROM "Appointments" WHERE "Id" = @id AND {where}""",
             new { id },
-            ct: ct) ?? throw new NotFoundException("Appointment");
+            ct: ct) ?? throw new NotFoundException("Appointment");
+        if(a.ReservationId.HasValue)throw new ConflictException("Reserved appointments require the revisioned booking transition API.");
         var previousStatus = a.Status;
         if (!EnumParseHelper.TryParseSnakeCase<AppointmentStatus>(status, out var s))
             throw new ValidationException("Invalid appointment status");
@@ -338,13 +230,14 @@ public class AppointmentService : IAppointmentService
             ct: ct) ?? throw new NotFoundException("Doctor");
         if (doctor.Role != UserRole.Doctor)
             throw new ValidationException("Selected user is not a doctor");
+        if(!doctor.IsActive)throw new ValidationException("Selected doctor is inactive.");
 
         var profileWhere = SqlFragments.WhereActive<StaffProfile>(ignoreTenant: false);
         var profile = await _db.QueryFirstOrDefaultAsync<StaffProfile>(
             $"""SELECT * FROM "StaffProfiles" WHERE "UserId" = @doctorUserId AND {profileWhere}""",
             new { doctorUserId },
             ct: ct) ?? throw new ValidationException("Doctor must have a staff profile. Add them under Hospital Staff first.");
-        if (!profile.IsAvailable)
+        if (!profile.IsActive || !profile.IsAvailable)
             throw new ValidationException("Doctor is not available for booking");
 
         return (doctor, profile);

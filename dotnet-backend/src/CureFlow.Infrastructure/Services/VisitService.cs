@@ -1,4 +1,5 @@
 using System.Text;
+using CureFlow.Infrastructure.Identity;
 using CureFlow.Application.Common;
 using CureFlow.Application.DTOs;
 using CureFlow.Application.Interfaces;
@@ -11,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace CureFlow.Infrastructure.Services;
 
-public class VisitService : IVisitService
+public partial class VisitService : IVisitService
 {
     private const long MaxLabReportBytes = 10 * 1024 * 1024;
     private static readonly HashSet<string> AllowedLabReportContentTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -26,66 +27,18 @@ public class VisitService : IVisitService
     private readonly ICureFlowDbSession _db;
     private readonly ITenantContext _tenant;
     private readonly IAuditService _audit;
-    private readonly StorageOptions _storage;
+    private readonly IPrivateDocumentStorage _objects;
+    private readonly IClinicalAccessAuditService _clinicalAudit;
 
-    public VisitService(ICureFlowDbSession db, ITenantContext tenant, IAuditService audit, IOptions<StorageOptions> storage)
+    public VisitService(ICureFlowDbSession db, ITenantContext tenant, IAuditService audit, IPrivateDocumentStorage objects, IClinicalAccessAuditService clinicalAudit, IUserPermissionService permissions, IIdempotentCommandExecutor commands, IOutboxWriter outbox, Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
         _db = db;
         _tenant = tenant;
         _audit = audit;
-        _storage = storage.Value;
+        _objects = objects; _clinicalAudit = clinicalAudit; _permissions=permissions; _commands=commands; _outbox=outbox; _configuration=configuration;
     }
 
-    public async Task<Guid> CreateAsync(CreateVisitRequest req, CancellationToken ct = default)
-    {
-        if (!string.IsNullOrWhiteSpace(req.DoctorNotes))
-            throw new ValidationException("Use Doctor Notes to create a draft and finish it explicitly.");
-        var patient = await _db.GetByIdAsync<Patient>(req.PatientId, ct: ct)
-            ?? throw new NotFoundException("Patient");
-        if (req.AppointmentId.HasValue)
-        {
-            var appointment = await _db.GetByIdAsync<Appointment>(req.AppointmentId.Value, ct: ct)
-                ?? throw new NotFoundException("Appointment");
-            if (appointment.PatientId != req.PatientId)
-                throw new ValidationException("The appointment belongs to another patient.");
-            var visitWhere = SqlFragments.WhereActive<Visit>(ignoreTenant: false);
-            var existing = await _db.QueryFirstOrDefaultAsync<Visit>(
-                $"""SELECT * FROM "Visits" WHERE "AppointmentId" = @appointmentId AND {visitWhere} ORDER BY "VisitDate" DESC LIMIT 1""",
-                new { appointmentId = req.AppointmentId.Value },
-                ct: ct);
-            if (existing != null)
-            {
-                if (existing.PatientId != req.PatientId)
-                    throw new ValidationException("The visit belongs to another patient.");
-                return existing.Id;
-            }
-        }
-
-        var doctorUserId = req.DoctorUserId ?? _tenant.UserId ?? Guid.Empty;
-        var doctor = await _db.GetByIdAsync<User>(doctorUserId, ct: ct);
-        var doctorName = doctor?.Name ?? "Doctor";
-
-        var visit = new Visit
-        {
-            PatientId = req.PatientId,
-            AppointmentId = req.AppointmentId,
-            DoctorUserId = doctorUserId,
-            DoctorName = doctorName,
-            Department = req.Department ?? patient.Department,
-            VisitDate = DateTime.UtcNow,
-            VisitType = req.VisitType ?? "outpatient",
-            ChiefComplaint = req.Symptoms,
-            Symptoms = req.Symptoms,
-            Diagnosis = req.Diagnosis,
-            DoctorNotes = req.DoctorNotes,
-            FollowUpAdvice = req.FollowUpAdvice,
-            FollowUpDate = DateTimeHelper.EnsureUtc(req.FollowUpDate),
-            Status = VisitStatus.InProgress,
-        };
-        await _db.InsertAsync(visit, ct: ct);
-        await _audit.LogAsync("visit.create", "visit", visit.Id.ToString(), new { req.PatientId }, ct);
-        return visit.Id;
-    }
+    public Task<Guid> CreateAsync(CreateVisitRequest req, CancellationToken ct = default) => throw new ConflictException("Use the versioned idempotent encounter start command.");
 
     public async Task<VisitDetailDto> GetAsync(Guid id, CancellationToken ct = default)
     {
@@ -218,28 +171,8 @@ public class VisitService : IVisitService
             .ToList();
     }
 
-    public async Task UpdateAsync(Guid id, UpdateVisitRequest req, CancellationToken ct = default)
-    {
-        var visit = await _db.GetByIdAsync<Visit>(id, ct: ct)
-            ?? throw new NotFoundException("Visit");
-        if (req.Symptoms != null) visit.Symptoms = req.Symptoms;
-        if (req.Diagnosis != null) visit.Diagnosis = req.Diagnosis;
-        if (req.DoctorNotes != null)
-            throw new ValidationException("Use Doctor Notes to edit a note within its editing window.");
-        if (req.FollowUpAdvice != null) visit.FollowUpAdvice = req.FollowUpAdvice;
-        if (req.FollowUpDate.HasValue) visit.FollowUpDate = DateTimeHelper.EnsureUtc(req.FollowUpDate);
-        if (req.Status.HasValue) visit.Status = req.Status.Value;
-        await _db.UpdateAsync(visit, ct: ct);
-    }
-
-    public async Task CompleteAsync(Guid id, CancellationToken ct = default)
-    {
-        var visit = await _db.GetByIdAsync<Visit>(id, ct: ct)
-            ?? throw new NotFoundException("Visit");
-        visit.Status = VisitStatus.Completed;
-        visit.EndedAt = DateTime.UtcNow;
-        await _db.UpdateAsync(visit, ct: ct);
-    }
+    public Task UpdateAsync(Guid id, UpdateVisitRequest req, CancellationToken ct = default) => throw new ConflictException("Use the versioned idempotent encounter update command.");
+    public Task CompleteAsync(Guid id, CancellationToken ct = default) => throw new ConflictException("Use the versioned idempotent explicit encounter completion command.");
 
     public async Task<IReadOnlyList<TimelineEntryDto>> GetTimelineAsync(Guid patientId, CancellationToken ct = default)
     {
@@ -310,7 +243,7 @@ public class VisitService : IVisitService
             "lab_report", l.ReportedAt ?? l.CreatedAt, l.Id,
             $"Lab — {l.TestName}",
             l.Interpretation,
-            new { l.VisitId, l.FileUrl, l.IsAbnormal })));
+            new { l.VisitId, FileUrl = $"/api/lab-reports/{l.Id:D}/download", l.IsAbnormal })));
 
         return entries.OrderByDescending(e => e.OccurredAt).ToList();
     }
@@ -333,13 +266,13 @@ public class VisitService : IVisitService
         sb.Append("h1{font-size:20px;margin:0} .muted{color:#666;font-size:13px} table{width:100%;border-collapse:collapse;margin-top:16px}");
         sb.Append("th,td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left} th{background:#f5f5f5}");
         sb.Append("@media print{body{margin:0}}</style></head><body>");
-        sb.Append($"<h1>{hospital?.Name ?? "Hospital"}</h1>");
+        sb.Append($"<h1>{System.Net.WebUtility.HtmlEncode(hospital?.Name ?? "Hospital")}</h1>");
         if (!string.IsNullOrEmpty(hospital?.Address))
-            sb.Append($"<div class='muted'>{hospital.Address}</div>");
-        sb.Append($"<hr/><p><strong>Patient:</strong> {patient.Name} · {patient.Phone}");
+            sb.Append($"<div class='muted'>{System.Net.WebUtility.HtmlEncode(hospital.Address)}</div>");
+        sb.Append($"<hr/><p><strong>Patient:</strong> {System.Net.WebUtility.HtmlEncode(patient.Name)} · {System.Net.WebUtility.HtmlEncode(patient.Phone)}");
         if (patient.Age.HasValue) sb.Append($" · {patient.Age}y");
         sb.Append("</p>");
-        sb.Append($"<p class='muted'>Date: {rx.PrescribedAt:dd MMM yyyy} · Dr. {rx.DoctorName}</p>");
+        sb.Append($"<p class='muted'>Date: {rx.PrescribedAt:dd MMM yyyy} · Dr. {System.Net.WebUtility.HtmlEncode(rx.DoctorName)}</p>");
         if (!string.IsNullOrEmpty(rx.Diagnosis))
             sb.Append($"<p><strong>Diagnosis:</strong> {System.Net.WebUtility.HtmlEncode(rx.Diagnosis)}</p>");
         if (!string.IsNullOrEmpty(rx.ChiefComplaint))
@@ -349,7 +282,7 @@ public class VisitService : IVisitService
         foreach (var item in rx.Items)
         {
             sb.Append($"<tr><td>{i++}</td><td>{System.Net.WebUtility.HtmlEncode(item.DrugName)}");
-            if (!string.IsNullOrEmpty(item.Strength)) sb.Append($" ({item.Strength})");
+            if (!string.IsNullOrEmpty(item.Strength)) sb.Append($" ({System.Net.WebUtility.HtmlEncode(item.Strength)})");
             sb.Append($"</td><td>{System.Net.WebUtility.HtmlEncode(item.Dosage ?? item.Frequency ?? "—")}</td>");
             sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(item.Duration ?? "—")}</td>");
             sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(item.PatientInstructions ?? item.Timing ?? "—")}</td></tr>");
@@ -398,17 +331,20 @@ public class VisitService : IVisitService
         }
 
         var safeName = Path.GetFileName(fileName);
-        var storedName = $"{Guid.NewGuid():N}{ext}";
-        var relativeDir = _storage.LabReportsPath.Trim('/');
-        var absoluteDir = Path.Combine(Directory.GetCurrentDirectory(), relativeDir, patientId.ToString("N"));
-        Directory.CreateDirectory(absoluteDir);
-        var absolutePath = Path.Combine(absoluteDir, storedName);
-        await using (var fs = File.Create(absolutePath))
-            await file.CopyToAsync(fs, ct);
-
-        var fileUrl = $"/{relativeDir}/{patientId:N}/{storedName}";
+        var resolvedType = ext.ToLowerInvariant() switch { ".pdf" => "application/pdf", ".png" => "image/png", _ => "image/jpeg" };
+        var stored = await _objects.StageAsync(_tenant.TenantId, file, resolvedType, fileSize, MaxLabReportBytes, ct);
+        await _objects.PublishAsync(_tenant.TenantId, stored, ct);
+        var reportId = Guid.NewGuid();
+        var fileUrl = $"/api/lab-reports/{reportId:D}/download";
         var report = new LabReport
         {
+            Id = reportId,
+            StorageKey = stored.Key,
+            StorageVersion = stored.Version,
+            Sha256 = stored.Sha256,
+            StoredLength = stored.Length,
+            StoredContentType = stored.ContentType,
+            OriginalFileName = safeName,
             PatientId = patientId,
             VisitId = visitId,
             TestName = testName,
@@ -416,7 +352,13 @@ public class VisitService : IVisitService
             ReportedAt = DateTime.UtcNow,
             OrderedByUserId = _tenant.UserId,
         };
-        await _db.InsertAsync(report, ct: ct);
+        await _db.TransactionAsync(async store =>
+        {
+            await store.InsertAsync(new PrivateDocumentVersion { Id = stored.Version, DocumentId = report.Id,
+                DocumentKind = "lab_report", ObjectKey = stored.Key, Sha256 = stored.Sha256,
+                Length = stored.Length, ContentType = stored.ContentType }, ct: ct);
+            await store.InsertAsync(report, ct: ct);
+        }, ct);
         return new LabReportUploadResultDto(report.Id, fileUrl, testName);
     }
 
@@ -428,24 +370,17 @@ public class VisitService : IVisitService
         if (string.IsNullOrWhiteSpace(report.FileUrl))
             throw new NotFoundException("Lab report file");
 
-        var relativePath = report.FileUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var absolutePath = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
-        if (!File.Exists(absolutePath))
-            throw new NotFoundException("Lab report file");
-
-        var ext = Path.GetExtension(absolutePath).ToLowerInvariant();
-        var contentType = ext switch
-        {
-            ".pdf" => "application/pdf",
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            _ => "application/octet-stream",
-        };
-        var downloadName = $"{SanitizeFileName(report.TestName)}{ext}";
-        var stream = File.OpenRead(absolutePath);
-        return (stream, contentType, downloadName);
+        if (await _db.GetByIdAsync<Patient>(report.PatientId, ct: ct) is null) throw new NotFoundException("Patient");
+        if (report.StorageKey is not null)
+            await CureFlow.Infrastructure.Storage.PrivateDocumentVersionGuard.RequireAsync(_db, report.StorageVersion, report.Id, "lab_report", report.StorageKey, report.Sha256, report.StoredLength, ct);
+        await _clinicalAudit.RecordAsync(new(report.PatientId, "LabReport", report.Id, "download", "authorized", report.StorageVersion?.ToString()), ct);
+        var stream = report.StorageKey is not null
+            ? await _objects.OpenReadAsync(_tenant.TenantId, report.StorageKey, report.Sha256 ?? string.Empty, report.StoredLength ?? 0, ct)
+            : await _objects.OpenLegacyReadAsync(report.PatientId, report.FileUrl, true, ct);
+        var ext = Path.GetExtension(report.OriginalFileName ?? report.FileUrl).ToLowerInvariant();
+        var resolvedType = report.StoredContentType ?? (ext switch { ".pdf" => "application/pdf", ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", _ => "application/octet-stream" });
+        return (stream, resolvedType, Path.GetFileName(report.OriginalFileName ?? $"{SanitizeFileName(report.TestName)}{ext}"));
     }
-
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
@@ -457,7 +392,7 @@ public class VisitService : IVisitService
 
     private static PatientDocumentDto MapDocument(PatientDocument d) => new(
         d.Id, d.PatientId, d.VisitId, d.AppointmentId, d.DocumentType, d.Title,
-        d.OriginalFileName, d.ContentType, d.FileSizeBytes, d.FileUrl,
+        d.OriginalFileName, d.ContentType, d.FileSizeBytes, $"/api/patient-documents/{d.Id:D}/download",
         d.UploadedByName, d.CapturedAt, d.CreatedAt);
 
     private sealed class VisitChartCardBuilder

@@ -72,6 +72,10 @@ public sealed class TenantApiActivityMiddleware(
                 {
                     // The request session may have an aborted transaction. Audit using a fresh session.
                     await using var scope = scopeFactory.CreateAsyncScope();
+                    var auditContext = (CureFlow.Application.Common.CurrentTenant)scope.ServiceProvider.GetRequiredService<CureFlow.Application.Common.ITenantContext>();
+                    auditContext.TenantId = entry.TenantId;
+                    auditContext.UserId = entry.ActorId;
+                    auditContext.IsAuthenticated = true;
                     var db = scope.ServiceProvider.GetRequiredService<ICureFlowDbSession>();
                     await db.InsertAsync(entry, ignoreTenant: true, ct: CancellationToken.None);
                 }

@@ -36,6 +36,6 @@ public static class PlatformSeeder
      if(exists==0)await store.InsertAsync(new PlanModule{Plan=plan,PlatformModuleId=module.Id,IsEnabled=module.IsCore},true);
     }
    }
-  });
+  }, ignoreTenant: true);
  }
 }

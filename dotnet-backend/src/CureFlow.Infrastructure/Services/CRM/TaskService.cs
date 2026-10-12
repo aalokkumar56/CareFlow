@@ -1,4 +1,4 @@
-﻿using CureFlow.Application.Common;
+using CureFlow.Application.Common;
 using CureFlow.Application.Interfaces;
 using CureFlow.Application.Notifications;
 using CureFlow.Domain.Entities;
@@ -21,6 +21,8 @@ public class TaskService : ITaskService
     public async Task<Guid> CreateAsync(string title, TaskType type, Guid? patientId,
         string? notes, DateTime? dueAt, Priority priority, Guid? assignedTo = null, CancellationToken ct = default)
     {
+        if(patientId.HasValue && type is TaskType.FollowUp or TaskType.PostVisitCheckIn)
+            throw new ConflictException("Patient clinical follow-up requires the accountable named follow-up API.");
         string? patientName = null;
         if (patientId.HasValue)
         {
@@ -86,6 +88,8 @@ public class TaskService : ITaskService
     public async Task UpdateAsync(Guid id, Domain.Enums.TaskStatus? status, CancellationToken ct = default)
     {
         var t = await _db.GetByIdAsync<TaskItem>(id, ct: ct) ?? throw new NotFoundException("Task");
+        if(t.PatientId.HasValue && t.Type is TaskType.FollowUp or TaskType.PostVisitCheckIn)
+            throw new ConflictException("Retained legacy clinical work requires explicit reviewed reconciliation; it cannot be closed or deleted through CRM tasks.");
         if (status.HasValue) t.Status = status.Value;
         await _db.UpdateAsync(t, ct: ct);
     }
@@ -93,6 +97,8 @@ public class TaskService : ITaskService
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var t = await _db.GetByIdAsync<TaskItem>(id, ct: ct) ?? throw new NotFoundException("Task");
+        if(t.PatientId.HasValue && t.Type is TaskType.FollowUp or TaskType.PostVisitCheckIn)
+            throw new ConflictException("Retained legacy clinical work requires explicit reviewed reconciliation; it cannot be closed or deleted through CRM tasks.");
         t.IsDeleted = true;
         await _db.UpdateAsync(t, ct: ct);
     }

@@ -4,7 +4,7 @@ using CureFlow.Domain.Entities.Saas;
 
 namespace CureFlow.Infrastructure.Areas.Platform;
 
-public sealed class TenantApiActivityService(ICureFlowDbSession db, PlatformAccess access)
+public sealed class TenantApiActivityService(IPlatformDbSession db, PlatformAccess access)
 {
     public async Task<object> List(Guid? tenantId, string? search, int? statusCode, bool errorsOnly,
         string? method, DateTime? from, DateTime? to, int page, int pageSize)

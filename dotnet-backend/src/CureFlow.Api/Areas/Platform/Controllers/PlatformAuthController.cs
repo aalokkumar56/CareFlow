@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace CureFlow.Api.Controllers;
 
 [ApiController]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [Route("api/platform/auth")]
 public class PlatformAuthController : ControllerBase
 {
@@ -32,4 +33,15 @@ public class PlatformAuthController : ControllerBase
     [EnableRateLimiting("login")]
     public async Task<ActionResult<PlatformAuthResponse>> Login([FromBody] LoginRequest req, CancellationToken ct) =>
         Ok(await _auth.LoginAsync(req, ct));
-}
+    [HttpGet("session")]
+    [Authorize(Policy = "PlatformUser")]
+    public async Task<ActionResult<PlatformSessionResponse>> Session(CancellationToken ct) => Ok(await _auth.GetSessionAsync(ct));
+
+    [HttpPost("logout")]
+    [Authorize(Policy = "PlatformUser")]
+    public async Task<IActionResult> Logout(CancellationToken ct)
+    {
+        await _auth.LogoutAsync(ct);
+        return NoContent();
+    }}
+

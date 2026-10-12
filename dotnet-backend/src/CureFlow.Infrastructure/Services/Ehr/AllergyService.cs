@@ -33,8 +33,12 @@ public class AllergyService : IAllergyService
             RecordedByUserId = _tenant.UserId ?? Guid.Empty,
             RecordedByName = _tenant.UserEmail,
         };
-        await _db.InsertAsync(a, ct: ct);
-        await _audit.LogAsync("allergy.add", "allergy", a.Id.ToString(), new { req.Allergen }, ct);
+        await _db.TransactionAsync(async db =>
+        {
+            await ClinicalAssociationGuard.RequireAsync(db, req.PatientId, null, null, ct);
+            await db.InsertAsync(a, ct: ct);
+        }, ct);
+        await _audit.LogAsync("allergy.add", "allergy", a.Id.ToString(), null, ct);
         return a.Id;
     }
 

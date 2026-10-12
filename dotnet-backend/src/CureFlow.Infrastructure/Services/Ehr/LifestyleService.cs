@@ -2,6 +2,7 @@ using CureFlow.Application.Common;
 using CureFlow.Application.DTOs;
 using CureFlow.Application.Interfaces;
 using CureFlow.Domain.Enums;
+using CureFlow.Domain.Entities;
 using CureFlow.Domain.Entities.Lifestyle;
 using CureFlow.Infrastructure.Persistence.Dapper;
 
@@ -64,14 +65,24 @@ public class LifestyleService : ILifestyleService
 
     public async Task UpsertAsync(Guid patientId, LifestyleProfileDto dto, CancellationToken ct = default)
     {
-        var l = await _db.QueryFirstOrDefaultAsync<LifestyleProfile>(
+        if (patientId == Guid.Empty || dto.PatientId != patientId)
+            throw new ValidationException("Lifestyle details must belong to the selected patient.");
+        var isNew = false;
+        await _db.TransactionAsync(async db =>
+        {
+        // Serialize initial creation as well as updates to the existing one-profile-per-patient mapping.
+        _ = await db.QueryFirstOrDefaultAsync<Patient>("""
+            SELECT "Id" FROM "Patients" WHERE "Id"=@patientId AND "TenantId"=@TenantId
+                AND NOT "IsDeleted" FOR UPDATE
+            """, new { patientId }, ct: ct) ?? throw new NotFoundException("Patient");
+        var l = await db.QueryFirstOrDefaultAsync<LifestyleProfile>(
             """
             SELECT * FROM "LifestyleProfiles"
             WHERE "PatientId" = @patientId AND "IsDeleted" = false AND "TenantId" = @TenantId
             """,
             new { patientId },
             ct: ct);
-        var isNew = l == null;
+        isNew = l == null;
         if (l == null)
         {
             l = new LifestyleProfile { PatientId = patientId };
@@ -108,9 +119,10 @@ public class LifestyleService : ILifestyleService
         l.LastUpdatedByUserId = _tenant.UserId;
 
         if (isNew)
-            await _db.InsertAsync(l, ct: ct);
+            await db.InsertAsync(l, ct: ct);
         else
-            await _db.UpdateAsync(l, ct: ct);
+            await db.UpdateAsync(l, ct: ct);
+        }, ct);
 
         await _audit.LogAsync(isNew ? "lifestyle.create" : "lifestyle.update", "lifestyle", patientId.ToString(), null, ct);
     }

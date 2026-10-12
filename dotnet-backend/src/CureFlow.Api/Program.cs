@@ -1,4 +1,5 @@
 using CureFlow.Api.Extensions;
+using CureFlow.Api.Configuration;
 using CureFlow.Application.Interfaces;
 using CureFlow.Infrastructure.Persistence;
 using CureFlow.Infrastructure.Persistence.Seeders;
@@ -22,13 +23,14 @@ if (string.Equals(
 }
 
 var builder = WebApplication.CreateBuilder(args);
+var startupPolicy = DatabaseStartupPolicy.Read(builder.Configuration, builder.Environment);
 
 builder.Logging.ClearProviders();
 builder.Host.UseSerilog((ctx, lc) => lc
     .ReadFrom.Configuration(ctx.Configuration)
     .Enrich.FromLogContext());
 
-builder.Services.AddCureFlowApi(builder.Configuration);
+builder.Services.AddCureFlowApi(builder.Configuration, builder.Environment);
 builder.Services.AddCureFlowInfrastructure(builder.Configuration);
 builder.Services.AddCureFlowAuthentication(builder.Configuration);
 
@@ -38,46 +40,56 @@ builder.Services.AddScoped<CureFlow.Infrastructure.Areas.Platform.TenantApiActiv
 var app = builder.Build();
 app.UseCureFlowRequestPipeline();
 
-await using (var scope = app.Services.CreateAsyncScope())
+if (startupPolicy.RequiresInitialization)
 {
+    await using var scope = app.Services.CreateAsyncScope();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
         .CreateLogger("Startup");
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    var session = scope.ServiceProvider.GetRequiredService<ICureFlowDbSession>();
-    var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
 
-    if (builder.Configuration.GetValue("Database:AutoMigrate", defaultValue: true))
+    if (startupPolicy.AutoMigrate)
     {
+        // Even local migrations use an explicitly selected maintenance connection.
+        var migrationConnection = builder.Configuration.GetConnectionString("Migration")
+            ?? throw new InvalidOperationException("Connection string 'Migration' is required for database initialization.");
+        var migrationOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(CureFlow.Infrastructure.Persistence.Dapper.CureFlowNpgsqlDataSource.Normalize(migrationConnection))
+            .Options;
+        await using var db = new ApplicationDbContext(migrationOptions,
+            new CureFlow.Application.Common.CurrentTenant());
         await MigrateWithRetryAsync(db, logger);
     }
 
-    // Permissions catalog — lightweight, required in every environment.
-    await RbacSeeder.SeedAsync(session);
-    await CureFlow.Infrastructure.Areas.Platform.PlatformSeeder.SeedAsync(session);
-
-    // Demo / E2E data — local/dev only. Production uses one-time /platform/auth/bootstrap.
-    if (builder.Configuration.GetValue("Database:Seed", defaultValue: false)
-        && !app.Environment.IsProduction())
+    if (startupPolicy.SeedCatalog || startupPolicy.SeedDemo)
     {
-        await DemoSeeder.SeedAsync(session, hasher);
-        await RbacSeeder.SeedAsync(session);
-        await MultiHospitalE2eSeeder.SeedAsync(session, hasher);
-        await RbacSeeder.SeedAsync(session);
+        var session = scope.ServiceProvider.GetRequiredService<IProvisioningDbSession>();
+        var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
 
-        // Platform owner is normally created once via the /platform/login setup form
-        // (bootstrap API). Opt in to seeding the default ops account for automated
-        // tests by setting Database:SeedPlatformUser=true.
-        if (builder.Configuration.GetValue("Database:SeedPlatformUser", defaultValue: false))
+        // Non-development catalog updates belong to the reviewed provisioning job.
+        if (startupPolicy.SeedCatalog)
         {
-            await PlatformUserSeeder.SeedAsync(session, hasher);
+            await RbacSeeder.SeedAsync(session);
+            await CureFlow.Infrastructure.Areas.Platform.PlatformSeeder.SeedAsync(session);
         }
 
-        if (builder.Configuration.GetValue("WhatsApp:UseTestPhone", defaultValue: false))
+        // Demo / E2E data — local/dev only. Production uses one-time /platform/auth/bootstrap.
+        if (startupPolicy.SeedDemo)
         {
-            var seedLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
-                .CreateLogger("TestPhoneSeeder");
-            var scopeSlug = builder.Configuration["WhatsApp:TestPhoneTenantSlug"];
-            await TestPhoneSeeder.SeedAsync(session, seedLogger, scopeSlug);
+            await DemoSeeder.SeedAsync(session, hasher);
+            await MultiHospitalE2eSeeder.SeedAsync(session, hasher);
+
+            // The default operator is an explicit Development demo-data opt-in.
+            if (startupPolicy.SeedPlatformUser)
+            {
+                await PlatformUserSeeder.SeedAsync(session, hasher);
+            }
+
+            if (startupPolicy.SeedTestPhone)
+            {
+                var seedLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("TestPhoneSeeder");
+                var scopeSlug = builder.Configuration["WhatsApp:TestPhoneTenantSlug"];
+                await TestPhoneSeeder.SeedAsync(session, seedLogger, scopeSlug);
+            }
         }
     }
 }
@@ -87,6 +99,7 @@ app.Run();
 static async Task MigrateWithRetryAsync(ApplicationDbContext db, Microsoft.Extensions.Logging.ILogger logger)
 {
     const int maxAttempts = 5;
+    Exception? lastEx = null;
     for (var attempt = 1; attempt <= maxAttempts; attempt++)
     {
         try
@@ -96,6 +109,7 @@ static async Task MigrateWithRetryAsync(ApplicationDbContext db, Microsoft.Exten
         }
         catch (Exception ex) when (attempt < maxAttempts && IsTransientDbFailure(ex))
         {
+            lastEx = ex;
             var delay = TimeSpan.FromSeconds(Math.Min(30, 5 * attempt));
             logger.LogWarning(
                 ex,
@@ -106,6 +120,9 @@ static async Task MigrateWithRetryAsync(ApplicationDbContext db, Microsoft.Exten
             await Task.Delay(delay);
         }
     }
+    // BUG-08: all retry attempts exhausted — fail fast rather than starting with an unmigrated DB
+    logger.LogCritical(lastEx, "Database migration failed after {Max} attempts. Shutting down.", maxAttempts);
+    throw lastEx ?? new InvalidOperationException("Database migration failed.");
 }
 
 static bool IsTransientDbFailure(Exception ex)

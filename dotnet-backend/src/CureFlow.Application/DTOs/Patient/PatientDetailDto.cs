@@ -1,4 +1,4 @@
-﻿using CureFlow.Domain.Entities;
+using CureFlow.Domain.Entities;
 using CureFlow.Domain.Enums;
 
 namespace CureFlow.Application.DTOs;
@@ -15,6 +15,10 @@ public record PatientDetailDto(
     string InquirySource, string? ReferralDoctor,
     DateTime? LastContactAt, DateTime? FollowUpDate,
     string? AiSummary, int? AiLeadScore,
-    DateTime CreatedAt, DateTime UpdatedAt, Guid? SourceLeadId = null);
+    DateTime CreatedAt, DateTime UpdatedAt, Guid? SourceLeadId = null)
+{
+    public BirthDateEvidence? BirthDate { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public string? ConcurrencyTag { get; init; }
+}
 
 // ===== Lifestyle =====

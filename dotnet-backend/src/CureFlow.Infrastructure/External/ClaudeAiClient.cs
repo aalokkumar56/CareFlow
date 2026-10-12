@@ -15,7 +15,8 @@ namespace CureFlow.Infrastructure.External;
 /// </summary>
 public class ClaudeAiClient : IAiService
 {
-    private readonly AnthropicClient _client;
+    private readonly IConfiguration _configuration;
+    private readonly IExternalProcessingPolicy _policy;
     private readonly ILogger<ClaudeAiClient> _logger;
     private const string Model = AnthropicModels.Claude35Sonnet; // upgrade to Claude 4.5 when SDK supports
 
@@ -26,10 +27,9 @@ public class ClaudeAiClient : IAiService
         "If a patient asks medical questions, recommend they speak to a doctor in person. " +
         "Be concise, professional, warm, and use simple English suitable for Indian patients.";
 
-    public ClaudeAiClient(IConfiguration config, ILogger<ClaudeAiClient> logger)
+    public ClaudeAiClient(IConfiguration config, ILogger<ClaudeAiClient> logger, IExternalProcessingPolicy policy)
     {
-        var apiKey = config["Anthropic:ApiKey"] ?? throw new InvalidOperationException("Anthropic:ApiKey missing");
-        _client = new AnthropicClient(apiKey);
+        _configuration = config; _policy = policy;
         _logger = logger;
     }
 
@@ -43,12 +43,12 @@ public class ClaudeAiClient : IAiService
 
         var prompt =
             $"Conversation so far:\n{convoText}\n\n" +
-            $"Patient: {patientName ?? "Unknown"} | Department: {department ?? "—"}\n\n" +
+            $"Department: {department ?? "—"}\n\n" +
             $"Draft a short polite WhatsApp reply (<60 words). " +
             $"{(instruction != null ? "Special instruction: " + instruction : "")}\n" +
             "Reply ONLY with the message body — no quotes, no preamble.";
 
-        var resp = await SendAsync(SystemPromptBase, prompt, ct);
+        var resp = await SendAsync(SystemPromptBase, prompt, "conversation-draft", ct);
         return resp.Trim().Trim('"');
     }
 
@@ -59,12 +59,12 @@ public class ClaudeAiClient : IAiService
             .Select(m => $"{(m.direction == "inbound" ? "Patient" : "Hospital")}: {m.body}"));
 
         var prompt =
-            $"Conversation with patient '{patientName ?? "Unknown"}':\n{convoText}\n\n" +
+            $"Conversation:\n{convoText}\n\n" +
             "Return STRICT JSON: {\"summary\":\"...\",\"urgency\":\"low|medium|high|emergency\"," +
             "\"category\":\"appointment_inquiry|package_inquiry|emergency|reports|follow_up|referral|general\"," +
             "\"suggested_follow_up\":\"24 hours|3 days|1 week|null\"}. JSON ONLY.";
 
-        var json = await SendAsync(SystemPromptBase, prompt, ct);
+        var json = await SendAsync(SystemPromptBase, prompt, "conversation-summary", ct);
         var match = System.Text.RegularExpressions.Regex.Match(json, @"\{[\s\S]*\}");
         if (!match.Success) return ("Unable to parse", "medium", "general", null);
         var parsed = JsonDocument.Parse(match.Value).RootElement;
@@ -84,16 +84,16 @@ public class ClaudeAiClient : IAiService
 
         try
         {
-            var json = await SendAsync(SystemPromptBase, prompt, ct);
+            var json = await SendAsync(SystemPromptBase, prompt, "message-classification", ct);
             var match = System.Text.RegularExpressions.Regex.Match(json, @"\{[\s\S]*\}");
             if (!match.Success) return ("medium", "general");
             var parsed = JsonDocument.Parse(match.Value).RootElement;
             return (parsed.GetProperty("urgency").GetString() ?? "medium",
                     parsed.GetProperty("category").GetString() ?? "general");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogError(ex, "Classify failed");
+            _logger.LogWarning("Classification failed; original message retained.");
             return ("medium", "general");
         }
     }
@@ -106,14 +106,20 @@ public class ClaudeAiClient : IAiService
             "services[], doctors[{name,role,specialty}], packages[{name,price,description}], " +
             "faqs[{question,answer}]. Empty array if missing. JSON only.\n\nCONTENT:\n" + aggregatedText;
 
-        var json = await SendAsync("You are a precise data extractor. Output only JSON.", prompt, ct);
+        var json = await SendAsync("You are a precise data extractor. Output only JSON.", prompt, "hospital-profile-extraction", ct);
         var match = System.Text.RegularExpressions.Regex.Match(json, @"\{[\s\S]*\}");
         if (!match.Success) throw new ValidationException("AI could not extract hospital profile from the website. Try a different URL or edit manually.");
         return JsonSerializer.Deserialize<JsonElement>(match.Value);
     }
 
-    private async Task<string> SendAsync(string system, string user, CancellationToken ct)
+    private async Task<string> SendAsync(string system, string user, string purpose, CancellationToken ct)
     {
+        await _policy.RequireDispatchAsync("anthropic", purpose, "ExternalProcessing", null, null, ct);
+        if (user.Length > 32768) throw new ValidationException("External processing input exceeds its bounded limit.");
+        var apiKey = _configuration["Anthropic:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey)) throw new DomainException("External processing is unavailable.", 503);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
         try
         {
             var req = new MessageParameters
@@ -127,13 +133,15 @@ public class ClaudeAiClient : IAiService
                     new() { Role = RoleType.User, Content = new List<ContentBase> { new TextContent { Text = user } } }
                 }
             };
-            var resp = await _client.Messages.GetClaudeMessageAsync(req, ctx: ct);
+            var resp = await new AnthropicClient(apiKey).Messages.GetClaudeMessageAsync(req, ctx: deadline.Token);
             return resp.Message.ToString() ?? string.Empty;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogError(ex, "Anthropic API call failed");
+            _logger.LogWarning("External AI request failed; original source retained.");
             throw new ValidationException("AI service is unavailable. Check Anthropic API key configuration.");
         }
     }
 }
+
+

@@ -79,12 +79,21 @@ public class UserManagementService : IUserManagementService
 
     public async Task<UserDto> CreateAsync(CreateUserRequest req, CancellationToken ct = default)
     {
+        UserDto result = null!;
+        await _db.TransactionAsync(async store => { result = await CreateCoreAsync(req,ct); },ct);
+        return result;
+    }
+
+    private async Task<UserDto> CreateCoreAsync(CreateUserRequest req, CancellationToken ct)
+    {
         if (await EmailExistsAsync(req.Email, null, ct))
             throw new ValidationException("Email already exists in this hospital");
 
+        await RequireAdministrationAsync(ct);
         if (!EnumParseHelper.TryParseSnakeCase<UserRole>(req.Role, out var role))
             throw new ValidationException("Invalid role");
 
+        await RequireRoleGrantAsync(role,ct);
         var user = new User
         {
             Name = req.Name.Trim(),
@@ -97,14 +106,22 @@ public class UserManagementService : IUserManagementService
         };
         await _db.InsertAsync(user, ct: ct);
         await _permissions.AssignLegacyRoleAsync(user, ct);
-        await _audit.LogAsync("user.create", "user", user.Id.ToString(), new { req.Email, req.Role }, ct);
+        await _audit.LogAsync("user.create", "user", user.Id.ToString(), new { role = req.Role }, ct);
         var permissionCodes = await _permissions.GetPermissionCodesAsync(user, ct);
         return new UserDto(user.Id, user.Name, user.Email, user.Role, user.IsActive, user.Specialty, user.Phone, permissionCodes);
     }
 
     public async Task<UserListItemDto> UpdateAsync(Guid id, UpdateUserRequest req, CancellationToken ct = default)
     {
+        UserListItemDto result = null!;
+        await _db.TransactionAsync(async store => { result = await UpdateCoreAsync(id,req,ct); },ct);
+        return result;
+    }
+
+    private async Task<UserListItemDto> UpdateCoreAsync(Guid id, UpdateUserRequest req, CancellationToken ct)
+    {
         var user = await FindUserAsync(id, ct);
+        await RequireAdministrationAsync(ct);
         GuardTarget(user);
 
         if (!string.IsNullOrWhiteSpace(req.Name))
@@ -121,6 +138,7 @@ public class UserManagementService : IUserManagementService
         {
             if (!EnumParseHelper.TryParseSnakeCase<UserRole>(req.Role, out var newRole))
                 throw new ValidationException("Invalid role");
+            await RequireRoleGrantAsync(newRole,ct);
             GuardRoleChange(user, newRole);
             user.Role = newRole;
         }
@@ -142,13 +160,21 @@ public class UserManagementService : IUserManagementService
         if (!string.IsNullOrWhiteSpace(req.Role))
             await SyncRbacRoleAsync(user, ct);
 
-        await _audit.LogAsync("user.update", "user", user.Id.ToString(), req, ct);
+        await _audit.LogAsync("user.update", "user", user.Id.ToString(), new { roleChanged = !string.IsNullOrWhiteSpace(req.Role), activeChanged = req.IsActive.HasValue, credentialChanged = !string.IsNullOrWhiteSpace(req.Password) }, ct);
         return ToListItem(user);
     }
 
     public async Task<UserListItemDto> SetActiveAsync(Guid id, bool isActive, CancellationToken ct = default)
     {
+        UserListItemDto result = null!;
+        await _db.TransactionAsync(async store => { result = await SetActiveCoreAsync(id,isActive,ct); },ct);
+        return result;
+    }
+
+    private async Task<UserListItemDto> SetActiveCoreAsync(Guid id, bool isActive, CancellationToken ct)
+    {
         var user = await FindUserAsync(id, ct);
+        await RequireAdministrationAsync(ct);
         GuardTarget(user);
         if (!isActive) GuardDisable(user);
         user.IsActive = isActive;
@@ -159,7 +185,15 @@ public class UserManagementService : IUserManagementService
 
     public async Task<ResetPasswordResult> ResetPasswordAsync(Guid id, ResetPasswordRequest req, CancellationToken ct = default)
     {
+        ResetPasswordResult result = null!;
+        await _db.TransactionAsync(async store => { result = await ResetPasswordCoreAsync(id,req,ct); },ct);
+        return result;
+    }
+
+    private async Task<ResetPasswordResult> ResetPasswordCoreAsync(Guid id, ResetPasswordRequest req, CancellationToken ct)
+    {
         var user = await FindUserAsync(id, ct);
+        await RequireAdministrationAsync(ct);
         GuardTarget(user);
 
         string tempPassword;
@@ -182,8 +216,17 @@ public class UserManagementService : IUserManagementService
 
     public async Task<UserListItemDto> AssignRoleAsync(Guid id, AssignRolesRequest req, CancellationToken ct = default)
     {
+        UserListItemDto result = null!;
+        await _db.TransactionAsync(async store => { result = await AssignRoleCoreAsync(id,req,ct); },ct);
+        return result;
+    }
+
+    private async Task<UserListItemDto> AssignRoleCoreAsync(Guid id, AssignRolesRequest req, CancellationToken ct)
+    {
         var user = await FindUserAsync(id, ct);
+        await RequireAdministrationAsync(ct);
         GuardTarget(user);
+        await RequireRoleGrantAsync(req.Role,ct);
         GuardRoleChange(user, req.Role);
         user.Role = req.Role;
         await _db.UpdateAsync(user, ct: ct);
@@ -194,7 +237,9 @@ public class UserManagementService : IUserManagementService
 
     public async Task AssignPermissionsAsync(Guid id, AssignPermissionsRequest req, CancellationToken ct = default)
     {
+        await RejectSharedCatalogueMutationAsync(ct);
         var user = await FindUserAsync(id, ct);
+        await RequireAdministrationAsync(ct);
         GuardTarget(user);
 
         var validCodes = (await _db.QueryAsync<string>(
@@ -334,6 +379,7 @@ public class UserManagementService : IUserManagementService
 
     public async Task<RoleDefinitionDto> CreateRoleAsync(CreateRoleRequest req, CancellationToken ct = default)
     {
+        await RejectSharedCatalogueMutationAsync(ct);
         var name = RoleNameRules.Normalize(req.Name);
         if (string.IsNullOrWhiteSpace(name))
             throw new ValidationException("Role name is required");
@@ -356,6 +402,7 @@ public class UserManagementService : IUserManagementService
 
     public async Task<RoleDefinitionDto> UpdateRoleAsync(string name, UpdateRoleRequest req, CancellationToken ct = default)
     {
+        await RejectSharedCatalogueMutationAsync(ct);
         var role = await FindRoleByNameAsync(name, ct);
         GuardRoleMutation(role);
 
@@ -369,6 +416,7 @@ public class UserManagementService : IUserManagementService
 
     public async Task DeleteRoleAsync(string name, CancellationToken ct = default)
     {
+        await RejectSharedCatalogueMutationAsync(ct);
         var role = await FindRoleByNameAsync(name, ct);
         if (role.IsSystem)
             throw new ValidationException("Built-in roles cannot be deleted");
@@ -475,9 +523,10 @@ public class UserManagementService : IUserManagementService
         await _permissions.AssignLegacyRoleAsync(user, ct);
     }
 
-    private async Task<User> FindUserAsync(Guid id, CancellationToken ct) =>
-        await _db.GetByIdAsync<User>(id, ct: ct) ?? throw new NotFoundException("User");
-
+    private async Task<User> FindUserAsync(Guid id,CancellationToken ct) =>
+        await _db.QueryFirstOrDefaultAsync<User>("""
+            SELECT * FROM "Users" WHERE "Id"=@id AND "TenantId"=@TenantId AND NOT "IsDeleted" FOR UPDATE
+            """,new{id},ct:ct) ?? throw new NotFoundException("User");
     private async Task<bool> EmailExistsAsync(string email, Guid? excludeId, CancellationToken ct)
     {
         if (excludeId.HasValue)
@@ -514,6 +563,38 @@ public class UserManagementService : IUserManagementService
             ignoreTenant: true,
             ct: ct) == 1;
 
+    private async Task<User> RequireAdministrationAsync(CancellationToken ct)
+    {
+        if(!_tenant.IsAuthenticated||_tenant.IsPlatformUser||_tenant.TenantId==Guid.Empty||!_tenant.UserId.HasValue)
+            throw new ForbiddenException();
+        var actor=await _db.QueryFirstOrDefaultAsync<User>("""
+            SELECT * FROM "Users" WHERE "Id"=@id AND "TenantId"=@TenantId AND NOT "IsDeleted" FOR SHARE
+            """,new{id=_tenant.UserId.Value},ct:ct);
+        if(actor is null||!actor.IsActive||!(await _permissions.GetPermissionCodesAsync(actor,ct)).Contains(CureFlowPermissions.UserEdit,StringComparer.Ordinal))
+            throw new ForbiddenException();
+        return actor;
+    }
+    private async Task RequireRoleGrantAsync(UserRole role,CancellationToken ct)
+    {
+        if(!Enum.IsDefined(role))throw new ValidationException("Invalid role");
+        var actor=await RequireAdministrationAsync(ct);
+        var actorCodes=(await _permissions.GetPermissionCodesAsync(actor,ct)).ToHashSet(StringComparer.Ordinal);
+        var roleName=CureFlowPermissions.MapLegacyRole(role);
+        var requested=await _db.QueryAsync<string>("""
+            SELECT DISTINCT p."Code" FROM "Roles" r JOIN "RolePermissions" rp ON rp."RoleId"=r."Id"
+            JOIN "Permissions" p ON p."Id"=rp."PermissionId"
+            WHERE r."Name"=@roleName AND r."IsActive" AND NOT r."IsDeleted" AND rp."IsActive" AND NOT rp."IsDeleted" AND p."IsActive" AND NOT p."IsDeleted"
+            """,new{roleName},ignoreTenant:true,ct:ct);
+        if(requested.Count==0)throw new ValidationException("Role has no approved active capabilities");
+        if(requested.Any(code=>!actorCodes.Contains(code)))throw new DomainException("You cannot grant capabilities beyond your current authority.",403);
+        if(role==UserRole.TenantOwner&&actor.Role!=UserRole.TenantOwner)throw new ForbiddenException();
+    }
+    private async Task RejectSharedCatalogueMutationAsync(CancellationToken ct)
+    {
+        await RequireAdministrationAsync(ct);
+        // Legacy Roles/RolePermissions are global catalogues: tenant requests may not rewrite other tenants' authority.
+        throw new DomainException("Tenant-local role administration is not deployed. Shared capability catalogues cannot be changed from hospital requests.",503);
+    }
     private void GuardTarget(User user)
     {
         if (user.Id == _tenant.UserId)
@@ -530,10 +611,7 @@ public class UserManagementService : IUserManagementService
     {
         if (user.Role == UserRole.TenantOwner && newRole != UserRole.TenantOwner)
             throw new ValidationException("Cannot change tenant owner role");
-        if (!Enum.TryParse<UserRole>(_tenant.UserRole, true, out var actorRole))
-            throw new ForbiddenException();
-        if (actorRole != UserRole.TenantOwner && newRole == UserRole.TenantOwner)
-            throw new ValidationException("Only tenant owner can assign tenant owner role");
+        // Current actor ownership and capability authority are checked from persisted rows in RequireRoleGrantAsync.
     }
 
     private static UserListItemDto ToListItem(User u) =>
@@ -543,7 +621,7 @@ public class UserManagementService : IUserManagementService
     {
         const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
         var bytes = new byte[12];
-        Random.Shared.NextBytes(bytes);
+        System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
         return new string(bytes.Select(b => chars[b % chars.Length]).ToArray());
     }
 

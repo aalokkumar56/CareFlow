@@ -26,6 +26,11 @@ public class Tenant : BaseEntity
 
     /// <summary>Approval gate — new signups start PendingApproval until platform ops approves.</summary>
     public TenantLifecycleStatus LifecycleStatus { get; set; } = TenantLifecycleStatus.PendingApproval;
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? ReviewStartedAt { get; set; }
+    public Guid? ReviewStartedByPlatformUserId { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public Guid? ReviewedByPlatformUserId { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public Guid? ApprovedByPlatformUserId { get; set; }
     public string? RejectionReason { get; set; }
@@ -33,3 +38,4 @@ public class Tenant : BaseEntity
 
     public ICollection<User> Users { get; set; } = new List<User>();
 }
+

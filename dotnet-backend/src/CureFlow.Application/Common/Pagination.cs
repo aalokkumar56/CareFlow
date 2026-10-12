@@ -9,6 +9,9 @@ public static class Pagination
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize <= 0 ? DefaultPageSize : pageSize, 1, maxPageSize);
-        return (page, pageSize, (page - 1) * pageSize);
+        var skip = (long)(page - 1) * pageSize;
+        if (skip > int.MaxValue)
+            throw new ValidationException("Requested page is outside the supported range.");
+        return (page, pageSize, (int)skip);
     }
 }

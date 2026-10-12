@@ -9,9 +9,9 @@ namespace CureFlow.Api.Controllers;
 [Route("api/public")]
 public class TenantPublicController : ControllerBase
 {
-    private readonly ICureFlowDbSession _db;
+    private readonly ICatalogueDbSession _db;
 
-    public TenantPublicController(ICureFlowDbSession db) => _db = db;
+    public TenantPublicController(ICatalogueDbSession db) => _db = db;
 
     /// <summary>Resolve hospital branding by slug (subdomain login).</summary>
     [HttpGet("tenant/{slug}")]

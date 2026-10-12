@@ -17,6 +17,13 @@ public sealed partial class PlatformAdminService
   if(!Enum.IsDefined(plan))throw Invalid("Select a valid subscription plan.");
   var capability=await Find<PlatformModule>(store,module);
   if(!SupportedModules.All.Any(s=>s.Key==capability.Key))throw Invalid("Only supported application modules can be assigned.");
+  if(input.IsEnabled){
+   var catalogue=await store.GetAllAsync<PlatformModule>(ignoreTenant:true);
+   var defaults=await store.QueryAsync<PlanModule>("SELECT * FROM \"PlanModules\" WHERE \"Plan\"=@plan AND NOT \"IsDeleted\"",new{plan=(int)plan},true);
+   var effective=PlatformModuleAccess.Evaluate(catalogue,Array.Empty<TenantEntitlement>(),defaults,DateTime.UtcNow);
+   if(SupportedModules.Dependencies(capability.Key).Any(dependency=>!effective.Any(x=>x.Key==dependency&&x.Effective)))
+    throw new CureFlow.Application.Common.DomainException("Enable the required plan module dependencies first.",409);
+  }
   var row=await store.QueryFirstOrDefaultAsync<PlanModule>("SELECT * FROM \"PlanModules\" WHERE \"Plan\"=@plan AND \"PlatformModuleId\"=@module",new{plan=(int)plan,module},true);
   var before=row is null?null:Encode(row);var create=row is null;
   row??=new PlanModule{Plan=plan,PlatformModuleId=module};row.IsEnabled=input.IsEnabled;row.IsDeleted=false;

@@ -20,28 +20,51 @@ public sealed partial class PlatformAdminService
   await Find<Tenant>(db,id);
   return await db.QueryAsync<Facility>("SELECT * FROM \"Facilities\" WHERE \"TenantId\"=@id AND NOT \"IsDeleted\" ORDER BY \"IsPrimary\" DESC,\"Name\"",new{id},true);
  }
- public Task<object> Facility(Guid tenant,Guid? id,FacilityInput input,string key)=>Change("facilities.write","facility.save",tenant,key,new{id,input},input.Reason,async(store,_)=>{
+ public Task<object> Facility(Guid tenant,Guid? id,FacilityInput input,string key)=>Change("facilities.write","facility.save",tenant,key,new{id,input},input.Reason,async(store,actor)=>{
   Text(input.Name,"Name");
   var row=id.HasValue?await Find<Facility>(store,id.Value):new Facility{TenantId=tenant};var before=id.HasValue?Encode(row):null;
   if(row.TenantId!=tenant)throw new DomainException("Facility not found.",404);
+  if(row.IsActive&&!input.IsActive){
+   // The control plane cannot inspect tenant clinical tables. Fail closed when a deployed location reference needs a reviewed bounded check.
+   var references=await store.QuerySingleAsync<long>("SELECT COUNT(*) FROM pg_catalog.pg_constraint WHERE contype='f' AND confrelid='public.\"Facilities\"'::regclass",ignoreTenant:true);
+   if(references>0)throw new DomainException("Facility reference review is required before deactivation.",409);
+  }
   if(input.IsPrimary&&!input.IsActive)throw Invalid("The primary facility must be active.");
   if(row.IsPrimary&&!input.IsPrimary)throw Invalid("Select a different primary facility before changing this one.");
-  if(!string.IsNullOrWhiteSpace(input.Code)){
-   var duplicates=await store.QuerySingleAsync<long>("SELECT COUNT(*) FROM \"Facilities\" WHERE \"TenantId\"=@tenant AND LOWER(\"Code\")=LOWER(@Code) AND \"Id\"<>@Id AND NOT \"IsDeleted\"",new{tenant,input.Code,row.Id},true);
+  var code=string.IsNullOrWhiteSpace(input.Code)?null:input.Code.Trim();
+  if(code is not null){
+   var duplicates=await store.QuerySingleAsync<long>("SELECT COUNT(*) FROM \"Facilities\" WHERE \"TenantId\"=@tenant AND LOWER(BTRIM(\"Code\"))=LOWER(@Code) AND \"Id\"<>@Id AND NOT \"IsDeleted\"",new{tenant,Code=code,row.Id},true);
    if(duplicates>0)throw new DomainException("Facility code already exists for this tenant.",409);
   }
   var active=await store.QuerySingleAsync<long>("SELECT COUNT(*) FROM \"Facilities\" WHERE \"TenantId\"=@tenant AND \"IsActive\" AND NOT \"IsDeleted\"",new{tenant},true);
-  row.Name=input.Name.Trim();row.Code=input.Code?.Trim();row.Address=input.Address;row.City=input.City;row.Country=input.Country;
+  var primaries=await store.QueryAsync<Facility>("SELECT * FROM \"Facilities\" WHERE \"TenantId\"=@tenant AND \"IsPrimary\" AND NOT \"IsDeleted\" FOR UPDATE",new{tenant},true);
+  if(!input.IsPrimary&&active>0&&!primaries.Any(x=>x.IsActive))throw new DomainException("Select an active primary facility before continuing.",409);
+  if(primaries.Count>1)throw new DomainException("Existing primary facility associations require review before this change.",409);
+  row.Name=input.Name.Trim();row.Code=code;row.Address=input.Address;row.City=input.City;row.Country=input.Country;
   row.IsActive=input.IsActive;row.IsPrimary=input.IsPrimary||(active==0&&input.IsActive);
-  if(row.IsPrimary)await store.ExecuteAsync("UPDATE \"Facilities\" SET \"IsPrimary\"=false,\"UpdatedAt\"=NOW() WHERE \"TenantId\"=@tenant AND \"Id\"<>@Id",new{tenant,row.Id},true);
+  if(row.IsPrimary){
+   await store.ExecuteAsync("UPDATE \"Facilities\" SET \"IsPrimary\"=false,\"UpdatedAt\"=NOW() WHERE \"TenantId\"=@tenant AND \"Id\"<>@Id AND \"IsPrimary\" AND NOT \"IsDeleted\"",new{tenant,row.Id},true);
+   if(!primaries.Any(x=>x.Id==row.Id))await store.InsertAsync(new PlatformAuditLog{PlatformUserId=actor,TenantId=tenant,Action="facility.primary.change",MetadataJson=Encode(new{reason=input.Reason,previousPrimaryIds=primaries.Select(x=>x.Id).ToArray(),primaryId=row.Id})},true);
+  }
   await Save(store,row,!id.HasValue);return(before,row);
  });
  public async Task<object> Entitlements(Guid id) => await PlatformModuleAccess.ResolveAsync(db,id);
  public Task<object> Entitlement(Guid tenant,Guid module,EntitlementInput input,string key)=>Change("entitlements.write","entitlement.save",tenant,key,new{module,input},input.Reason,async(store,_)=>{
   var capability=await Find<PlatformModule>(store,module); if(!SupportedModules.All.Any(s=>s.Key==capability.Key))throw Invalid("Only supported application modules can be assigned.");
   if(input.ExpiresAt.HasValue&&input.ExpiresAt<=DateTime.UtcNow)throw Invalid("Expiry must be in the future.");
+  if(input.IsEnabled){
+   var current=await PlatformModuleAccess.ResolveAsync(store,tenant);
+   if(SupportedModules.Dependencies(capability.Key).Any(dependency=>!current.Any(x=>x.Key==dependency&&x.Effective)))
+    throw new DomainException("Enable the required module dependencies before enabling this module.",409);
+  }
   var row=await store.QueryFirstOrDefaultAsync<TenantEntitlement>("SELECT * FROM \"TenantEntitlements\" WHERE \"TenantId\"=@tenant AND \"PlatformModuleId\"=@module",new{tenant,module},true);
   var before=row is null?null:Encode(row);var create=row is null;
+  // Resetting to plan policy soft-deletes the override. Restore it explicitly:
+  // the shared UpdateAsync intentionally excludes soft-deleted rows.
+  if(row is { IsDeleted:true }) {
+   var restored=await store.ExecuteAsync("UPDATE \"TenantEntitlements\" SET \"IsDeleted\"=false WHERE \"Id\"=@Id AND \"TenantId\"=@tenant AND \"PlatformModuleId\"=@module AND \"IsDeleted\"",new{row.Id,tenant,module},true);
+   if(restored!=1)throw new DomainException("The module override changed. Reload and try again.",409);
+  }
   row??=new TenantEntitlement{TenantId=tenant,PlatformModuleId=module};
   row.IsEnabled=input.IsEnabled;row.Limit=input.Limit;row.ExpiresAt=input.ExpiresAt?.ToUniversalTime();row.Version++;row.IsDeleted=false;
   if(create)await store.InsertAsync(row,true);else await store.UpdateAsync(row,true);

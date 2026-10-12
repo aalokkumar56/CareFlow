@@ -45,7 +45,11 @@ public partial class ClinicalRecordService : IClinicalRecordService
         };
         if (r.HeightCm.HasValue && r.WeightKg.HasValue && r.HeightCm.Value > 0)
             v.Bmi = Math.Round(r.WeightKg.Value / (decimal)Math.Pow((double)r.HeightCm.Value / 100, 2), 1);
-        await _db.InsertAsync(v, ct: ct);
+        await _db.TransactionAsync(async db =>
+        {
+            await ClinicalAssociationGuard.RequireAsync(db, r.PatientId, r.VisitId, r.AppointmentId, ct);
+            await db.InsertAsync(v, ct: ct);
+        }, ct);
         return v.Id;
     }
 
@@ -72,7 +76,11 @@ public partial class ClinicalRecordService : IClinicalRecordService
             IsOngoing = r.IsOngoing,
             Description = r.Description,
         };
-        await _db.InsertAsync(m, ct: ct);
+        await _db.TransactionAsync(async db =>
+        {
+            await ClinicalAssociationGuard.RequireAsync(db, r.PatientId, null, null, ct);
+            await db.InsertAsync(m, ct: ct);
+        }, ct);
         return m.Id;
     }
 
@@ -88,7 +96,11 @@ public partial class ClinicalRecordService : IClinicalRecordService
             AgeOfOnset = r.AgeOfOnset,
             Notes = r.Notes,
         };
-        await _db.InsertAsync(f, ct: ct);
+        await _db.TransactionAsync(async db =>
+        {
+            await ClinicalAssociationGuard.RequireAsync(db, r.PatientId, null, null, ct);
+            await db.InsertAsync(f, ct: ct);
+        }, ct);
         return f.Id;
     }
 

@@ -9,6 +9,7 @@ public class UpdatePatientValidator : AbstractValidator<UpdatePatientRequest>
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200).When(x => x.Name != null);
         RuleFor(x => x.Phone).NotEmpty().MaximumLength(20).When(x => x.Phone != null);
+        RuleFor(x => x.Email).MaximumLength(254).EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x.Age).InclusiveBetween(0, 150).When(x => x.Age.HasValue);
     }
 }

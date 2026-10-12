@@ -22,13 +22,15 @@ public class PatientDocumentService : IPatientDocumentService
 
     private readonly ICureFlowDbSession _db;
     private readonly ITenantContext _tenant;
-    private readonly StorageOptions _storage;
+    private readonly IPrivateDocumentStorage _objects;
+    private readonly IClinicalAccessAuditService _clinicalAudit;
+    private readonly IOutboxWriter _outbox;
 
-    public PatientDocumentService(ICureFlowDbSession db, ITenantContext tenant, IOptions<StorageOptions> storage)
+    public PatientDocumentService(ICureFlowDbSession db, ITenantContext tenant, IPrivateDocumentStorage objects, IClinicalAccessAuditService clinicalAudit, IOutboxWriter outbox)
     {
         _db = db;
         _tenant = tenant;
-        _storage = storage.Value;
+        _objects = objects; _clinicalAudit = clinicalAudit; _outbox = outbox;
     }
 
     public async Task<IReadOnlyList<PatientDocumentDto>> ListByPatientAsync(Guid patientId, CancellationToken ct = default)
@@ -37,7 +39,7 @@ public class PatientDocumentService : IPatientDocumentService
             throw new NotFoundException("Patient");
 
         var rows = await _db.QueryAsync<PatientDocument>(
-            """SELECT * FROM "PatientDocuments" WHERE "PatientId" = @patientId ORDER BY "CapturedAt" DESC""",
+            """SELECT * FROM "PatientDocuments" WHERE "PatientId" = @patientId AND NOT "IsDeleted" ORDER BY "CapturedAt" DESC""",
             new { patientId }, ct: ct);
         return rows.Select(Map).ToList();
     }
@@ -72,23 +74,28 @@ public class PatientDocumentService : IPatientDocumentService
         if (visitId.HasValue)
         {
             var visit = await _db.QueryFirstOrDefaultAsync<Visit>(
-                """SELECT * FROM "Visits" WHERE "Id" = @visitId AND "PatientId" = @patientId LIMIT 1""",
+                """SELECT * FROM "Visits" WHERE "Id" = @visitId AND "PatientId" = @patientId AND NOT "IsDeleted" LIMIT 1""",
                 new { visitId = visitId.Value, patientId }, ct: ct)
                 ?? throw new NotFoundException("Visit");
             appointmentId = visit.AppointmentId;
         }
 
-        var storedName = $"{Guid.NewGuid():N}{ext}";
-        var relativeDir = string.IsNullOrWhiteSpace(_storage.PatientDocumentsPath)
-            ? "patient-documents"
-            : _storage.PatientDocumentsPath.Trim('/');
-        var absoluteDir = Path.Combine(Directory.GetCurrentDirectory(), relativeDir, patientId.ToString("N"));
-        Directory.CreateDirectory(absoluteDir);
-        var absolutePath = Path.Combine(absoluteDir, storedName);
-        await using (var fs = File.Create(absolutePath))
-            await file.CopyToAsync(fs, ct);
-
-        var fileUrl = $"/{relativeDir}/{patientId:N}/{storedName}";
+        var stored = await _objects.StageAsync(_tenant.TenantId, file, GuessContentType(ext), fileSize, MaxBytes, ct);
+        await _objects.PublishAsync(_tenant.TenantId, stored, ct);
+        await using (var bytes = await _objects.OpenReadAsync(_tenant.TenantId, stored.Key, stored.Sha256, stored.Length, ct))
+        {
+            var header = new byte[8];
+            var read = await bytes.ReadAtLeastAsync(header, header.Length, false, ct);
+            var detected = read >= 8 && header.AsSpan().SequenceEqual(new byte[] { 137,80,78,71,13,10,26,10 }) ? "image/png"
+                : read >= 3 && header[0] == 255 && header[1] == 216 && header[2] == 255 ? "image/jpeg"
+                : read >= 5 && header.AsSpan(0,5).SequenceEqual("%PDF-"u8) ? "application/pdf" : null;
+            if (detected is null || detected != GuessContentType(ext)
+                || (!string.IsNullOrWhiteSpace(contentType) && !string.Equals(contentType, detected, StringComparison.OrdinalIgnoreCase)))
+                throw new DomainException("File bytes do not match the supported document type.", 400);
+        }
+        // Published invalid objects remain retained for explicit orphan reconciliation.
+        var documentId = Guid.NewGuid();
+        var fileUrl = $"/api/patient-documents/{documentId:D}/download";
         var resolvedTitle = string.IsNullOrWhiteSpace(title)
             ? Path.GetFileNameWithoutExtension(fileName)
             : title.Trim();
@@ -101,6 +108,12 @@ public class PatientDocumentService : IPatientDocumentService
 
         var doc = new PatientDocument
         {
+            Id = documentId,
+            ScanStatus = "quarantined",
+            StorageKey = stored.Key,
+            StorageVersion = stored.Version,
+            Sha256 = stored.Sha256,
+            StoredLength = stored.Length,
             PatientId = patientId,
             VisitId = visitId,
             AppointmentId = appointmentId,
@@ -114,8 +127,17 @@ public class PatientDocumentService : IPatientDocumentService
             UploadedByName = uploader?.Name,
             CapturedAt = DateTime.UtcNow,
         };
-        await _db.InsertAsync(doc, ct: ct);
-        return new PatientDocumentUploadResultDto(doc.Id, fileUrl, doc.Title);
+        await _db.TransactionAsync(async store =>
+        {
+            await ClinicalAssociationGuard.RequireAsync(store, patientId, doc.VisitId, doc.AppointmentId, ct);
+            await store.InsertAsync(new PrivateDocumentVersion { Id = stored.Version, DocumentId = doc.Id,
+                DocumentKind = "patient_document", ObjectKey = stored.Key, Sha256 = stored.Sha256,
+                Length = stored.Length, ContentType = stored.ContentType }, ct: ct);
+            await store.InsertAsync(doc, ct: ct);
+            await _outbox.WriteAsync(store, Guid.NewGuid(), "document.scan", 1, "PatientDocument", doc.Id,
+                stored.Version.ToString("D"), new DocumentScanRequest(doc.Id, stored.Version, stored.Sha256, stored.Length, stored.Key), ct);
+        }, ct);
+        return new PatientDocumentUploadResultDto(doc.Id, fileUrl, doc.Title, doc.ScanStatus, $"/api/patient-documents/{doc.Id:D}/status");
     }
 
     public async Task<(Stream Stream, string ContentType, string FileName)> DownloadAsync(Guid id, CancellationToken ct = default)
@@ -123,24 +145,31 @@ public class PatientDocumentService : IPatientDocumentService
         var doc = await _db.GetByIdAsync<PatientDocument>(id, ct: ct)
             ?? throw new NotFoundException("Patient document");
 
+        if (doc.ScanStatus != "available" || !doc.ScanEvidenceId.HasValue)
+            throw new DomainException("Document is unavailable until verification succeeds.", 409);
+        var scan = await _db.GetByIdAsync<DocumentScanEvidence>(doc.ScanEvidenceId.Value, ct: ct);
+        if (scan is null || scan.DocumentId != doc.Id || scan.Version != doc.StorageVersion
+            || scan.Sha256 != doc.Sha256 || scan.Verdict != "clean")
+            throw new DomainException("Document verification evidence is unavailable.", 409);
+
         if (string.IsNullOrWhiteSpace(doc.FileUrl))
             throw new NotFoundException("Patient document file");
 
-        var relativePath = doc.FileUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var absolutePath = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
-        if (!File.Exists(absolutePath))
-            throw new NotFoundException("Patient document file");
-
-        var ext = Path.GetExtension(absolutePath).ToLowerInvariant();
-        var contentType = string.IsNullOrWhiteSpace(doc.ContentType)
-            ? GuessContentType(ext)
-            : doc.ContentType;
-        var downloadName = string.IsNullOrWhiteSpace(doc.OriginalFileName)
-            ? $"{SanitizeFileName(doc.Title)}{ext}"
-            : doc.OriginalFileName;
-        return (File.OpenRead(absolutePath), contentType, downloadName);
+        if (await _db.GetByIdAsync<Patient>(doc.PatientId, ct: ct) is null) throw new NotFoundException("Patient");
+        if (doc.StorageKey is not null)
+            await CureFlow.Infrastructure.Storage.PrivateDocumentVersionGuard.RequireAsync(_db, doc.StorageVersion, doc.Id, "patient_document", doc.StorageKey, doc.Sha256, doc.StoredLength, ct);
+        await _clinicalAudit.RecordAsync(new(doc.PatientId, "PatientDocument", doc.Id, "download", "authorized", doc.StorageVersion?.ToString()), ct);
+        var stream = doc.StorageKey is not null
+            ? await _objects.OpenReadAsync(_tenant.TenantId, doc.StorageKey, doc.Sha256 ?? string.Empty, doc.StoredLength ?? 0, ct)
+            : await _objects.OpenLegacyReadAsync(doc.PatientId, doc.FileUrl, false, ct);
+        return (stream, doc.ContentType, Path.GetFileName(doc.OriginalFileName));
     }
-
+    public async Task<PatientDocumentStatusDto> GetStatusAsync(Guid id, CancellationToken ct = default)
+    {
+        var doc = await _db.GetByIdAsync<PatientDocument>(id, ct: ct) ?? throw new NotFoundException("Patient document");
+        if (await _db.GetByIdAsync<Patient>(doc.PatientId, ct: ct) is null) throw new NotFoundException("Patient");
+        return new(doc.Id, doc.ScanStatus, doc.ScannedAt);
+    }
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var doc = await _db.GetByIdAsync<PatientDocument>(id, ct: ct)
@@ -152,8 +181,8 @@ public class PatientDocumentService : IPatientDocumentService
 
     private static PatientDocumentDto Map(PatientDocument d) => new(
         d.Id, d.PatientId, d.VisitId, d.AppointmentId, d.DocumentType, d.Title,
-        d.OriginalFileName, d.ContentType, d.FileSizeBytes, d.FileUrl,
-        d.UploadedByName, d.CapturedAt, d.CreatedAt);
+        d.OriginalFileName, d.ContentType, d.FileSizeBytes, $"/api/patient-documents/{d.Id:D}/download",
+        d.UploadedByName, d.CapturedAt, d.CreatedAt, d.ScanStatus);
 
     private static string GuessContentType(string ext) => ext.ToLowerInvariant() switch
     {
@@ -169,3 +198,4 @@ public class PatientDocumentService : IPatientDocumentService
         return string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c)).Trim();
     }
 }
+

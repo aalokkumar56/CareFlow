@@ -1,0 +1,13 @@
+# Local patient registration rollout (BE-043)
+
+Source prepared only. No migration, identifier backfill or role script has been applied.
+
+`POST /api/patients` now requires an explicit `facilityId` in the existing creation body, one `Idempotency-Key` header, current Patient.Create and an active same-tenant facility. Configure an approved `PatientRegistration:ApprovedRetryHorizonHours` (1..8760); otherwise registration writes fail closed. The response retains `id` and adds a minimal receipt with status201; `Idempotency-Replayed` identifies receipt replay.
+
+The existing patient GUID, protected clinical audit, technical audit, local NotificationEvent and MRN allocation are committed by the same registration executor transaction. NotificationPublisher currently persists local rows only (SignalR/email are TODOs). Replayed commands skip creation/publish entirely. Notification rows use the patient GUID as dedupe identity. A DB failure inside registration rolls the transaction back; no notification failure is treated as a second registration.
+
+The local-mrn namespace is explicit per tenant/facility. Atomic INSERT/ON CONFLICT UPDATE counters issue positive retained values formatted MRN-{sequence padded to at least10digits}. Counter exhaustion denies allocation. PatientIdentifiers retain unique namespace/value and one local MRN per patient/facility; composite foreign keys prevent wrong-tenant references. Issued identifier rows are immutable; counters cannot reset or be deleted. No retirement/merge or namespace reassignment is implied. `GET /api/patients/{id}/identifiers?facility_id={id}` requires current Patient.View and returns at most20 minimum-field identifiers with protected read audit.
+
+`AddLocalPatientIdentifiers` and generated `deploy/database/local-patient-identifiers.sql` remain unapplied. Protected backup/restore/role/RLS/concurrent registration acceptance must precede deployment. No MRNs are generated for existing records, no government identifiers copied, and no person identity deduplication is claimed.
+
+Legacy CSV/Excel and lead conversion creation paths still require an explicit namespace/idempotency integration decision before full feature rollout. They remain preserved in source and do not receive guessed facility MRNs. UI is paused and must adopt the explicit facility/key contract before release. Future facility-scoped capability assignment (BE-034) remains a separate authority frontier; this source verifies current tenant capability and active scoped facility without fabricating facility grants.

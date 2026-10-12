@@ -1,0 +1,19 @@
+{
+  "Kind": "Empty synthetic database rehearsal; not existing-data acceptance",
+  "CompletedAtUtc": "2026-10-07T22:36:47.9513451+00:00",
+  "MigrationCount": 35,
+  "RestoredMigrationCount": 35,
+  "ControlPlaneClinicalReadDenied": true,
+  "NarrowSessionGrants": true,
+  "TenantRowsIsolated": true,
+  "MissingTenantDenied": true,
+  "PlatformFlagCannotBypassRls": true,
+  "CrossTenantReassignmentDenied": true,
+  "TransactionContextClearedAfterRollback": true,
+  "RestrictedPatientScopeVerified": true,
+  "AuthorityReplaySucceeded": true,
+  "SyntheticMarkerPreserved": true,
+  "SchemaSha256": "7CD6FE27F2A274A1CF5AA1853591812EFD8DA42B7578E7304D30A7D6B247FD68",
+  "AuthoritySha256": "F432B3381A1B3742254D8A54DAF296FC7DE88EC36D7646D15E6501C750708F32",
+  "SyntheticArchiveSha256": "74E0241F3CF9EF09680927013EA01D86A523EE5EE721A520E6553ACEBDD06A0F"
+}

@@ -7,6 +7,7 @@ namespace CureFlow.Domain.Entities;
 public class Patient : TenantEntity
 {
     public Guid? SourceLeadId { get; set; }
+    public string IdentityStatus { get; set; } = "unreviewed";
     // Identity
     public string Name { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
@@ -16,6 +17,11 @@ public class Patient : TenantEntity
     public bool EmailNotificationsEnabled { get; set; }
     public int? Age { get; set; }
     public DateTime? DateOfBirth { get; set; }
+    // Existing timestamps retain unknown historical precision; new evidence uses calendar components.
+    public string BirthDatePrecision { get; set; } = "legacy_unspecified";
+    public int? BirthDateYear { get; set; }
+    public int? BirthDateMonth { get; set; }
+    public int? BirthDateDay { get; set; }
     public Gender Gender { get; set; } = Gender.Unknown;
     public BloodGroup BloodGroup { get; set; } = BloodGroup.Unknown;
 
@@ -47,6 +53,7 @@ public class Patient : TenantEntity
     // AI
     public string? AiSummary { get; set; }
     public int? AiLeadScore { get; set; }
+
 
     // Identity proof
     public string? GovIdType { get; set; }

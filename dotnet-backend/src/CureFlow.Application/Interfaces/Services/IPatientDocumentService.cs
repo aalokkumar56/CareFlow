@@ -16,5 +16,7 @@ public interface IPatientDocumentService
         long fileSize,
         CancellationToken ct = default);
     Task<(Stream Stream, string ContentType, string FileName)> DownloadAsync(Guid id, CancellationToken ct = default);
+    Task<PatientDocumentStatusDto> GetStatusAsync(Guid id, CancellationToken ct = default);
     Task DeleteAsync(Guid id, CancellationToken ct = default);
 }
+

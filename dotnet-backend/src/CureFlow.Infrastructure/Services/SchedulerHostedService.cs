@@ -27,7 +27,7 @@ public class SchedulerHostedService : BackgroundService
         _logger.LogInformation("CureFlow scheduler started");
         var lastEscalate = DateTime.UtcNow;
         var lastApptRemind = DateTime.UtcNow;
-        var lastMissedAppt = DateTime.UtcNow;
+
         var lastReEngage = DateTime.UtcNow;
 
         while (!ct.IsCancellationRequested)
@@ -42,11 +42,6 @@ public class SchedulerHostedService : BackgroundService
             {
                 await CreateAppointmentRemindersAsync(ct);
                 lastApptRemind = now;
-            }
-            if ((now - lastMissedAppt).TotalMinutes >= 30)
-            {
-                await MarkMissedAppointmentsAsync(ct);
-                lastMissedAppt = now;
             }
             if ((now - lastReEngage).TotalHours >= 12)
             {
@@ -141,53 +136,6 @@ public class SchedulerHostedService : BackgroundService
                 }, ct: ct);
                 a.ReminderSent = true;
                 await db.UpdateAsync(a, ct: ct);
-            }
-        }, ct);
-    }
-
-    private async Task MarkMissedAppointmentsAsync(CancellationToken ct)
-    {
-        var threshold = DateTime.UtcNow.AddHours(-2);
-        await RunForAllTenantsAsync(async (sp, _) =>
-        {
-            var db = sp.GetRequiredService<ICureFlowDbSession>();
-            var publisher = sp.GetRequiredService<INotificationPublisher>();
-
-            var appts = await db.QueryAsync<Appointment>(
-                """
-                SELECT * FROM "Appointments"
-                WHERE "ScheduledAt" < @threshold AND "Status" = @scheduled
-                  AND "IsDeleted" = false AND "TenantId" = @TenantId
-                """,
-                new { threshold, scheduled = (int)AppointmentStatus.Scheduled },
-                ct: ct);
-
-            foreach (var a in appts)
-            {
-                a.Status = AppointmentStatus.NoShow;
-                await db.UpdateAsync(a, ct: ct);
-                await db.InsertAsync(new TaskItem
-                {
-                    Title = $"Missed appt follow-up: {a.PatientName}",
-                    Type = TaskType.FollowUp,
-                    PatientId = a.PatientId,
-                    PatientName = a.PatientName,
-                    Priority = Priority.High,
-                    DueAt = DateTime.UtcNow,
-                    Notes = $"Patient missed appointment with {a.DoctorName}. Reach out via WhatsApp.",
-                }, ct: ct);
-
-                var firstName = a.PatientName?.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "Patient";
-                await publisher.PublishAsync(new NotificationPublishRequest(
-                    NotificationTypeCodes.AppointmentNoShow,
-                    "Appointment no-show",
-                    $"{firstName} missed their appointment with {a.DoctorName}",
-                    NotificationSeverity.Warning,
-                    EntityType: "appointment",
-                    EntityId: a.Id,
-                    ActionUrl: $"/appointments?id={a.Id}",
-                    DedupeKey: $"appointment.no_show:{a.Id}",
-                    DoctorUserId: a.DoctorUserId), ct);
             }
         }, ct);
     }

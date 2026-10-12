@@ -7,7 +7,6 @@ namespace CureFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/whatsapp")]
-
 public class WhatsappWebhookController : ControllerBase
 {
     private readonly IWhatsappService _wa;
@@ -44,9 +43,11 @@ public class WhatsappWebhookController : ControllerBase
         using var reader = new StreamReader(Request.Body);
         var body = await reader.ReadToEndAsync(ct);
         var sig = Request.Headers["X-Hub-Signature-256"].ToString();
-        _logger.LogInformation("WhatsApp webhook received ({Length} bytes): {Preview}",
-            body.Length,
-            body.Length <= 500 ? body : body[..500] + "...");
+
+        // BUG-09: log only metadata (byte count), never body content which may contain PII
+        _logger.LogDebug("WhatsApp webhook received ({Length} bytes)", body.Length);
+        _logger.LogInformation("WhatsApp webhook received ({Length} bytes)", body.Length);
+
         await _wa.ProcessIncomingWebhookAsync(body, sig, ct);
         return Ok(new { ok = true });
     }

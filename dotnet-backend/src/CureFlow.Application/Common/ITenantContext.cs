@@ -8,6 +8,10 @@ public interface ITenantContext
     string? UserEmail { get; }
     string? UserRole { get; }
     bool IsAuthenticated { get; }
+    bool IsPlatformUser => false;
+    Guid? PlatformSessionId => null;
+    int PlatformSessionRevision => 0;
+    string? ServiceIdentity => null;
 }
 
 

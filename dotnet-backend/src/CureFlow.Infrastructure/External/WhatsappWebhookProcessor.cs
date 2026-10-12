@@ -39,7 +39,7 @@ public static class WhatsappWebhookProcessor
         var root = doc.RootElement;
 
         var phoneNumberId = ExtractPhoneNumberId(root);
-        var tenantId = await ResolveWebhookTenantIdAsync(db, phoneNumberId, logger, ct);
+        var tenantId = await ResolveWebhookTenantIdAsync(scope.ServiceProvider.GetRequiredService<ICatalogueDbSession>(), phoneNumberId, logger, ct);
         if (tenantId == Guid.Empty)
         {
             logger.LogWarning("Webhook received but no active tenant found for phone_number_id={PhoneNumberId}; skipping.", phoneNumberId);
@@ -49,6 +49,7 @@ public static class WhatsappWebhookProcessor
         tenantContext.TenantId = tenantId;
         tenantContext.IsAuthenticated = true;
         tenantContext.UserEmail = "whatsapp@webhook";
+        tenantContext.ServiceIdentity = "whatsapp-webhook";
 
         var settings = await scope.ServiceProvider.GetRequiredService<IWhatsAppSettingsService>().GetAsync(ct);
         if (!TryVerifyWebhookSignature(body, signatureHeader, settings.AppSecret, logger))
@@ -76,7 +77,7 @@ public static class WhatsappWebhookProcessor
     }
 
     /// <summary>
-    /// Returns true when signature is valid, or when verification is skipped (no secret / no header).
+    /// Returns true only when configured signature authority verifies the payload.
     /// </summary>
     public static bool TryVerifyWebhookSignature(
         string body,
@@ -84,17 +85,11 @@ public static class WhatsappWebhookProcessor
         string? appSecret,
         ILogger? logger = null)
     {
-        if (string.IsNullOrEmpty(appSecret))
-            return true;
-
-        if (string.IsNullOrEmpty(signatureHeader))
+        if (string.IsNullOrEmpty(appSecret) || string.IsNullOrEmpty(signatureHeader))
         {
-            logger?.LogWarning(
-                "WhatsApp AppSecret is configured but X-Hub-Signature-256 header is missing — processing webhook anyway. " +
-                "Set the same App Secret in WhatsBiz Webhook Relay for strict verification.");
-            return true;
+            logger?.LogWarning("Webhook signature authority is unavailable; rejecting payload.");
+            return false;
         }
-
         if (!VerifyMetaSignature(body, signatureHeader, appSecret))
         {
             logger?.LogWarning("Invalid WhatsApp webhook signature — rejecting payload.");
@@ -224,45 +219,13 @@ public static class WhatsappWebhookProcessor
     }
 
     private static async Task<Guid> ResolveWebhookTenantIdAsync(
-        ICureFlowDbSession db,
-        string? phoneNumberId,
-        ILogger logger,
-        CancellationToken ct)
+        ICatalogueDbSession db, string? phoneNumberId, ILogger logger, CancellationToken ct)
     {
-        if (!string.IsNullOrWhiteSpace(phoneNumberId))
-        {
-            var byPhone = await db.QueryFirstOrDefaultAsync<Guid?>(
-                """
-                SELECT "TenantId" FROM "WhatsAppSettings"
-                WHERE "PhoneNumberId" = @phoneNumberId AND "IsDeleted" = false
-                LIMIT 1
-                """,
-                new { phoneNumberId },
-                ignoreTenant: true,
-                ct: ct);
-            if (byPhone.HasValue && byPhone.Value != Guid.Empty)
-                return byPhone.Value;
-        }
-
-        var tenantId = await db.QueryFirstOrDefaultAsync<Guid?>(
-            """
-            SELECT "Id" FROM "Tenants"
-            WHERE "IsActive" = true AND "IsDeleted" = false
-            ORDER BY "CreatedAt" ASC
-            LIMIT 1
-            """,
-            ignoreTenant: true,
-            ct: ct);
-
-        if (tenantId.HasValue && !string.IsNullOrWhiteSpace(phoneNumberId))
-            logger.LogWarning(
-                "No WhatsAppSettings match phone_number_id={PhoneNumberId}; falling back to first active tenant {TenantId}",
-                phoneNumberId,
-                tenantId);
-
-        return tenantId ?? Guid.Empty;
+        if (string.IsNullOrWhiteSpace(phoneNumberId)) return Guid.Empty;
+        return await db.QueryFirstOrDefaultAsync<Guid>(
+            "SELECT public.cureflow_webhook_tenant(@phoneNumberId)",
+            new { phoneNumberId }, ignoreTenant: true, ct: ct);
     }
-
     private static async Task<bool> TryProcessMetaPayloadAsync(InboundContext ctx, JsonElement root, CancellationToken ct)
     {
         if (!root.TryGetProperty("entry", out var entries) || entries.ValueKind != JsonValueKind.Array)

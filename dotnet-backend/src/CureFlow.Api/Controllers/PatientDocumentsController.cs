@@ -40,8 +40,12 @@ public class PatientDocumentsController : ControllerBase
             file.ContentType,
             file.Length,
             ct);
-        return Ok(result);
+        return Accepted(result.StatusUrl, result);
     }
+
+    [HttpGet("patient-documents/{id:guid}/status")]
+    [Authorize(Policy = "Permission:Clinical.View")]
+    public async Task<IActionResult> Status(Guid id, CancellationToken ct) => Ok(await _svc.GetStatusAsync(id, ct));
 
     [HttpGet("patient-documents/{id:guid}/download")]
     [Authorize(Policy = "Permission:Clinical.View")]
@@ -59,3 +63,4 @@ public class PatientDocumentsController : ControllerBase
         return NoContent();
     }
 }
+

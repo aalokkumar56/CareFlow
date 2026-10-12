@@ -25,27 +25,9 @@ public class WhatsappConversationNormalizationHostedService : BackgroundService
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
-            using var scope = _services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ICureFlowDbSession>();
-
-            var defaultTenantId = await db.QueryFirstOrDefaultAsync<Guid>(
-                """
-                SELECT "Id" FROM "Tenants"
-                WHERE "IsActive" = true AND "IsDeleted" = false
-                ORDER BY "CreatedAt"
-                LIMIT 1
-                """,
-                ignoreTenant: true,
-                ct: stoppingToken);
-
-            if (defaultTenantId == Guid.Empty)
-            {
-                _logger.LogInformation("Skipping WhatsApp conversation normalization — no active tenant");
-                return;
-            }
-
-            _logger.LogInformation("Starting deferred WhatsApp conversation normalization");
-            await WhatsappConversationHelper.NormalizeAndMergeAsync(db, defaultTenantId, stoppingToken);
+            await CureFlow.Infrastructure.Persistence.TenantScopeRunner.RunForAllTenantsAsync(
+                _services, (ICureFlowDbSession db, CureFlow.Domain.Entities.Saas.Tenant tenant) =>
+                    WhatsappConversationHelper.NormalizeAndMergeAsync(db, tenant.Id, stoppingToken), stoppingToken);
             _logger.LogInformation("WhatsApp conversation normalization completed");
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

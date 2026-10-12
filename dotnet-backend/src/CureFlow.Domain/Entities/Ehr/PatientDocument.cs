@@ -5,6 +5,13 @@ namespace CureFlow.Domain.Entities.Ehr;
 /// <summary>Scanned/photographed clinical document (e.g. hardcopy doctor note) linked to a patient visit.</summary>
 public class PatientDocument : TenantEntity
 {
+    public string ScanStatus { get; set; } = "unresolved";
+    public Guid? ScanEvidenceId { get; set; }
+    public DateTime? ScannedAt { get; set; }
+    public string? StorageKey { get; set; }
+    public Guid? StorageVersion { get; set; }
+    public string? Sha256 { get; set; }
+    public long? StoredLength { get; set; }
     public Guid PatientId { get; set; }
     public Guid? VisitId { get; set; }
     public Guid? AppointmentId { get; set; }
@@ -18,3 +25,4 @@ public class PatientDocument : TenantEntity
     public string? UploadedByName { get; set; }
     public DateTime CapturedAt { get; set; } = DateTime.UtcNow;
 }
+

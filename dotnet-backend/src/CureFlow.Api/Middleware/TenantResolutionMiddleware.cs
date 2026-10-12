@@ -16,11 +16,12 @@ public class TenantResolutionMiddleware
         _env = env;
     }
 
-    public async Task InvokeAsync(HttpContext ctx, ICureFlowDbSession db)
+    public async Task InvokeAsync(HttpContext ctx)
     {
         var slug = ResolveSlug(ctx);
         if (!string.IsNullOrWhiteSpace(slug))
         {
+            var db = ctx.RequestServices.GetRequiredService<ICatalogueDbSession>();
             var tenant = await db.QueryFirstOrDefaultAsync<Tenant>(
                 """
                 SELECT "Id", "Slug", "Name", "LifecycleStatus"

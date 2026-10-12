@@ -1,0 +1,45 @@
+name: cureflow-staging
+services:
+  api:
+    image: ${CUREFLOW_API_IMAGE:?Set an immutable reviewed API image tag or digest}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Staging
+      ASPNETCORE_URLS: http://+:8080
+      Database__AutoMigrate: "false"
+      Database__SeedCatalog: "false"
+      Database__Seed: "false"
+      Database__SeedPlatformUser: "false"
+      WhatsApp__UseTestPhone: "false"
+      Storage__PrivateRoot: /var/lib/cureflow/private-files/documents
+      ConnectionStrings__Default: ${CUREFLOW_STAGING_RUNTIME_CONNECTION:?Provide restricted staging runtime credentials}
+      ConnectionStrings__Identity: ${CUREFLOW_STAGING_IDENTITY_CONNECTION:?Provide restricted staging identity credentials}
+      ConnectionStrings__Catalogue: ${CUREFLOW_STAGING_CATALOGUE_CONNECTION:?Provide read-only staging catalogue credentials}
+      ConnectionStrings__PlatformIdentity: ${CUREFLOW_STAGING_PLATFORM_IDENTITY_CONNECTION:?Provide restricted staging platform login credentials}
+      ConnectionStrings__ControlPlane: ${CUREFLOW_STAGING_CONTROL_PLANE_CONNECTION:?Provide restricted staging platform credentials}
+      Jwt__Secret: ${CUREFLOW_STAGING_JWT_SECRET:?Provide a staging-only secret}
+      Cors__Origins: ${CUREFLOW_STAGING_BROWSER_ORIGINS:?Provide exact staging origins}
+      Cors__AllowCredentials: "false"
+      RateLimiting__Relaxed: "false"
+    ports:
+      - "127.0.0.1:${CUREFLOW_STAGING_PORT:-5280}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - staging-private-files:/var/lib/cureflow/private-files
+      - staging-conversation-media:/app/whatsapp-media
+      - staging-relay-media:/app/webhook-media
+      - staging-logs:/app/logs
+    networks:
+      - isolated
+    security_opt:
+      - no-new-privileges:true
+networks:
+  isolated:
+    internal: true
+volumes:
+  staging-private-files:
+  staging-conversation-media:
+  staging-relay-media:
+  staging-logs:

@@ -13,9 +13,10 @@ public record PatientDocumentDto(
     string FileUrl,
     string? UploadedByName,
     DateTime CapturedAt,
-    DateTime CreatedAt);
+    DateTime CreatedAt, string Status = "unresolved");
 
-public record PatientDocumentUploadResultDto(Guid Id, string FileUrl, string Title);
+public record PatientDocumentUploadResultDto(Guid Id, string FileUrl, string Title, string Status = "quarantined", string StatusUrl = "");
+public record PatientDocumentStatusDto(Guid Id, string Status, DateTime? ScannedAt);
 
 public record VisitChartCardDto(
     Guid? VisitId,
@@ -31,3 +32,4 @@ public record VisitChartCardDto(
     IReadOnlyList<ClinicalNoteDto> Notes,
     IReadOnlyList<PrescriptionDto> Prescriptions,
     IReadOnlyList<PatientDocumentDto> PaperNotes);
+

@@ -16,6 +16,7 @@ public static class WhatsappPhoneHelper
     public static string Normalize(string phone)
     {
         if (string.IsNullOrWhiteSpace(phone)) return string.Empty;
+        var explicitCountry = phone.TrimStart().StartsWith("+", StringComparison.Ordinal) || phone.TrimStart().StartsWith("00", StringComparison.Ordinal);
         var digits = new string(phone.Where(char.IsDigit).ToArray());
 
         if (digits.StartsWith("00", StringComparison.Ordinal))
@@ -23,7 +24,7 @@ public static class WhatsappPhoneHelper
 
         digits = digits.TrimStart('0');
 
-        if (digits.Length == 10)
+        if (digits.Length == 10 && !explicitCountry)
             digits = "91" + digits;
 
         return digits;

@@ -1,0 +1,12 @@
+# Organization configuration rollout (BE-031 / BE-036)
+
+Source preparation only; no migration or role script has been applied.
+
+- `AddOrganizationConfiguration` adds OrganizationUnits, FacilityLocations and append-only FacilityOperatingSettings. It does not map legacy DepartmentCatalog strings, move encounters or rewrite existing clinical associations.
+- Node APIs: `GET/POST /api/facilities/{facilityId}/organization/{units|locations}` and `PUT .../{id}`. Reads return one parent level, at most 200 records. Writes require current Organization.Manage, one Idempotency-Key and ExpectedRevision for existing nodes. Organization.View/Manage are catalogue entries only; no role grants are invented.
+- Node identities, facility and normalized codes are retained. Names/kinds may be updated within the bounded catalogue. Nodes cannot be deleted; deactivate them after moving/deactivating active children. Parent keys require the same tenant/facility. API and database advisory locking serialize each facility hierarchy. Database guards reject self/indirect cycles, subtree moves exceeding 32 levels and invalid parents. Forced tenant RLS applies to all three tables.
+- Settings rows are immutable. New rows require consecutive positive revisions and an active owning facility. Current/history settings are separate from legacy tenant timezone compatibility and do not convert historical timestamps/DOBs.
+- Configure an operator-approved `OrganizationHierarchy:ApprovedRetryHorizonHours` and `FacilityOperatingSettings:ApprovedRetryHorizonHours` (1..8760) before writes. Missing values deny writes; no approval/default is fabricated.
+- `deploy/database/organization-configuration.sql` is the generated unapplied delta after AddTenantLifecycleReviewEvidence. Apply only in the protected existing-data rehearsal after restore/role gates. Reapply the restrictive authority role script; runtime node DELETE and settings UPDATE/DELETE remain revoked.
+- Release evidence still needs backup/restore, role/RLS and concurrent graph/revision rehearsal. Review existing Facility tenant identity consistency before adding its alternate key. No existing patient, signed record, financial or stock rows are altered by this source preparation.
+- Dapper explicit mappings now match the newly introduced EF tables, including singular DocumentScanEvidence and plural TenantProcessingPolicies. This corrects source persistence routing; it is not evidence that absent runtime tables have been deployed.

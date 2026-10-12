@@ -10,6 +10,7 @@ namespace CureFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _auth;
@@ -22,9 +23,15 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest req, CancellationToken ct)
     {
+        if (HttpContext.Items["resolved_tenant_slug"] is string resolved)
+        {
+            if (!string.IsNullOrWhiteSpace(req.TenantSlug) && !string.Equals(req.TenantSlug, resolved, StringComparison.OrdinalIgnoreCase))
+                throw new DomainException("Hospital login context does not match.", 400);
+            req = req with { TenantSlug = resolved };
+        }
         var login = await _auth.LoginAsync(req, ct);
         var session = await _refresh.StartAsync(login, ct);
-        return Ok(new { session.AccessToken, session.RefreshToken, session.RefreshExpiresAt, login.User, login.Tenant });
+        return Ok(new { session.AccessToken, session.RefreshToken, session.RefreshExpiresAt, session.RecoveryMode, login.User, login.Tenant });
     }
 
     public record RefreshRequest(string RefreshToken);
@@ -66,3 +73,5 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<UserDto>> Register([FromBody] CreateUserRequest req, CancellationToken ct) =>
         Ok(await _auth.CreateUserAsync(req, ct));
 }
+
+

@@ -1,3 +1,5 @@
+using CureFlow.Application.Common;
+using System.Globalization;
 using CureFlow.Application.DTOs;
 using CureFlow.Application.Interfaces;
 using FluentValidation;
@@ -44,7 +46,7 @@ public class ClinicalController : ControllerBase
     public async Task<IActionResult> AddNote([FromBody] CreateClinicalNoteRequest r, CancellationToken ct)
     {
         var id = await _svc.AddNoteAsync(r, ct);
-        return Ok(await _svc.GetNoteAsync(id, ct));
+        return NoteResponse(await _svc.GetNoteAsync(id, ct));
     }
 
     [HttpGet("notes/patient/{patientId:guid}")]
@@ -56,15 +58,45 @@ public class ClinicalController : ControllerBase
     [Authorize(Policy = "Permission:Clinical.Edit")]
     public async Task<IActionResult> UpdateNote(Guid id, [FromBody] UpdateClinicalNoteRequest r, CancellationToken ct)
     {
+        r = WithExpectedRevision(id, r);
         await _svc.UpdateNoteAsync(id, r, ct);
-        return Ok(await _svc.GetNoteAsync(id, ct));
+        return NoteResponse(await _svc.GetNoteAsync(id, ct));
     }
 
     [HttpGet("notes/{id:guid}")]
     [Authorize(Policy = "Permission:Clinical.View")]
     public async Task<IActionResult> GetNote(Guid id, CancellationToken ct) =>
-        Ok(await _svc.GetNoteAsync(id, ct));
+        NoteResponse(await _svc.GetNoteAsync(id, ct));
 
+    private IActionResult NoteResponse(ClinicalNoteDto note)
+    {
+        Response.Headers.ETag = $"\"note-{note.Id:N}-r{note.Revision}\"";
+        return Ok(note);
+    }
+
+    private UpdateClinicalNoteRequest WithExpectedRevision(Guid id, UpdateClinicalNoteRequest request)
+    {
+        var header = Request.Headers.IfMatch.ToString();
+        if (!string.IsNullOrEmpty(header))
+        {
+            // One strong tag tied to this note is required; wildcard tags cannot detect lost edits.
+            var prefix = $"\"note-{id:N}-r";
+            if (header.Length > 128 || !header.StartsWith(prefix, StringComparison.Ordinal)
+                || !header.EndsWith('"')
+                || !int.TryParse(header[prefix.Length..^1], NumberStyles.None, CultureInfo.InvariantCulture, out var revision)
+                || revision < 1)
+                throw new DomainException("Supply a valid strong record ETag in If-Match.", 400);
+            if (request.Revision.HasValue && request.Revision.Value != revision)
+                throw new DomainException("The header and request record versions must match.", 400);
+            request = request with { Revision = revision };
+        }
+        // Existing editors already submit Revision; preserve that equivalent precondition.
+        if (!request.Revision.HasValue)
+            throw new DomainException("Supply the current record version before saving.", 428);
+        if (request.Revision.Value < 1)
+            throw new DomainException("The record version must be positive.", 400);
+        return request;
+    }
     [HttpPost("medical-history")]
     [Authorize(Policy = "Permission:Clinical.Edit")]
     public async Task<IActionResult> AddMedical([FromBody] CreateMedicalHistoryRequest r, CancellationToken ct)

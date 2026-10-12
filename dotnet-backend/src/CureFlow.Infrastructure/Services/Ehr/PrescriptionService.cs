@@ -81,6 +81,12 @@ public class PrescriptionService : IPrescriptionService
 
         await _db.TransactionAsync(async session =>
         {
+            await ClinicalAssociationGuard.RequireAsync(session, req.PatientId, req.VisitId, req.AppointmentId, ct);
+            foreach (var actor in injections.Select(x => x.AdministeredByUserId).Where(x => x.HasValue).Select(x => x!.Value).Distinct())
+            {
+                var user = await session.GetByIdAsync<User>(actor, ct: ct);
+                if (user is not { IsActive: true }) throw new ValidationException("Select an active hospital user for the administration record.");
+            }
             await session.InsertAsync(rx, ct: ct);
             foreach (var item in items)
             {

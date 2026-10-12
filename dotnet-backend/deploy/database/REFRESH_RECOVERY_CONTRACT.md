@@ -1,0 +1,11 @@
+# Multi-instance refresh recovery contract
+
+Hospital refresh credentials are single-use, cryptographically random256-bit tokens. Only SHA256 hashes are stored. The original family expires after7days; rotation does not extend it. Access tokens expire after1hour and are bound to the persisted family/current security revision.
+
+Login/refresh responses expose RecoveryMode=single_use_reauthenticate_on_ambiguity. A successful rotation atomically consumes the old hash and inserts one new hash under a PostgreSQL family advisory transaction lock. All application instances use the same persisted lock/state. Logout takes the same lock and revokes only that family. Replay of consumed, revoked or expired credentials revokes the family and returns401 requiring sign-in; it cannot restore authority. Disabled user/rejected or suspended tenant/security-revision mismatch never issues fresh authority.
+
+The BFF/client must coordinate one refresh per stored session across tabs/instances, replace credentials atomically, and must not retry a consumed credential after an ambiguous/lost success response. An ambiguous response or legitimate concurrent losing refresh has a recoverable outcome: clear that session and sign in again. Existing other families remain valid. This conservative contract avoids inventing a replay grace period, storing plaintext replacement credentials or assuming a shared encryption-key service. A later seamless duplicate-response contract needs explicit bounded encrypted credential escrow/expiry/key rotation and security review.
+
+Credential inputs are bounded64hex characters, logout is idempotent for unknown/already revoked hashes, response caching is disabled, and no credentials are written to audit/log payloads. Narrow pre-authentication operations are not obstructed by stale hospital JWTs. No live provider sends/database changes/tests were performed.
+
+Protected multi-instance rehearsal remains required before live activation: simultaneous rotations, lost acknowledgement, rotation/logout race, replay, expiry, security reset, current permission removal and lookup failure. Current source has no distributed BFF session store; its activation/coordination is a UI/BFF deployment gate.

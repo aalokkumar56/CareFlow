@@ -1,7 +1,7 @@
-﻿using CureFlow.Domain.Enums;
+using CureFlow.Domain.Enums;
 
 namespace CureFlow.Application.DTOs;
 
 public record UpdateVisitRequest(
     string? Symptoms, string? Diagnosis, string? DoctorNotes,
-    string? FollowUpAdvice, DateTime? FollowUpDate, VisitStatus? Status);
+    string? FollowUpAdvice, DateTime? FollowUpDate, VisitStatus? Status, long? ExpectedRevision=null, string? Reason=null);

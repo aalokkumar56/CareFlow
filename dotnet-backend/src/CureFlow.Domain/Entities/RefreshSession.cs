@@ -2,6 +2,7 @@ namespace CureFlow.Domain.Entities;
 
 public class RefreshSession
 {
+    public int SecurityRevision { get; set; }
     public string TokenHash { get; set; } = "";
     public Guid FamilyId { get; set; }
     public Guid UserId { get; set; }
@@ -9,3 +10,4 @@ public class RefreshSession
     public bool Consumed { get; set; }
     public bool Revoked { get; set; }
 }
+

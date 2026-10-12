@@ -1,0 +1,11 @@
+# Hospital session authority rollout
+
+Access tokens carry tenant_session_id (existing refresh FamilyId) and tenant_session_revision. Every protected hospital request checks persisted unconsumed/nonrevoked/unexpired family membership, same actor/tenant, active user and permitted tenant lifecycle; live permissions/roles replace stale claims per request. Authority failures deny access; unusable sessions return401 and missing capability403. Platform identities cannot enter hospital APIs, and hospital identities cannot enter platform routes.
+
+BindTenantSessionAuthority adds revision columns/index without deleting records. Old refresh rows revision0 and JWTs missing family binding require fresh sign-in; rollout must explicitly communicate this reauthentication. User revision starts1. Password/security revision, disablement, soft deletion, legacy role or tenant change atomically increments revision and revokes that user's families. Assignment and role-permission edits revoke affected users using narrowly scoped trigger functions whose direct PUBLIC execution is revoked. Review trigger owner/grants against forced RLS on the protected destination; no app login must own these functions or receive migration authority.
+
+Deliberately removed assignment history prevents legacy-role reassignment on login. Permission lookup never manufactures a fallback capability and excludes disabled/deleted roles and permissions. Legacy users with no assignment history can receive their existing mapped assignment once through the explicit authenticated-login provisioning path; no historical removal is restored.
+
+Logout revokes only the presented refresh family under the same advisory lock as rotation, idempotently. Unbound token claims never authorize a clinical route. Pre-auth login/refresh/logout/register-tenant routes use narrow identity credential operations, so stale hospital JWTs cannot prevent refresh or idempotent logout; platform identities remain rejected from those hospital routes.
+
+Rehearse schema/grants, role-trigger authority and cross-instance logout/replay/current-capability behavior on the protected destination before deployment. No live database changes/test files were performed. Safe session projections omit family credentials/passwords; no raw refresh token is persisted (SHA256 hashes only).

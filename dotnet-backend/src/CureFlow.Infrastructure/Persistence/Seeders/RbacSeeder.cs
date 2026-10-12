@@ -207,10 +207,16 @@ public static class RbacSeeder
             ignoreTenant: true,
             ct: ct)).ToDictionary(r => r.Name, r => r.Id);
 
+        // Identity adjudication authority needs an explicit reviewed grant, even for administrators.
+        // Preserve existing grants; seeding must never create these new reserved capabilities implicitly.
+        var administratorCodes = CureFlowPermissions.All.Where(code =>
+            code is not CureFlowPermissions.FollowUpView and not CureFlowPermissions.FollowUpManage and not CureFlowPermissions.FollowUpComplete and not CureFlowPermissions.FollowUpEscalate and not CureFlowPermissions.IdentityReviewView and not CureFlowPermissions.IdentityReviewManage
+                and not CureFlowPermissions.IdentityMergeView and not CureFlowPermissions.IdentityMergeManage and not CureFlowPermissions.IdentityMergeReverse and not CureFlowPermissions.PatientIdentityVerify
+                and not CureFlowPermissions.PatientExport and not CureFlowPermissions.PatientImport and not CureFlowPermissions.PatientRestrictedView and not CureFlowPermissions.PatientAlertsView and not CureFlowPermissions.PatientAlertsManage).ToArray();
         var mappings = new Dictionary<string, IReadOnlyList<string>>
         {
-            [RoleNames.SuperAdmin] = CureFlowPermissions.All,
-            [RoleNames.Admin] = CureFlowPermissions.All,
+            [RoleNames.SuperAdmin] = administratorCodes,
+            [RoleNames.Admin] = administratorCodes,
             [RoleNames.Doctor] = Filter(
                 CureFlowPermissions.PatientView, CureFlowPermissions.PatientEdit,
                 CureFlowPermissions.AppointmentView, CureFlowPermissions.AppointmentCreate, CureFlowPermissions.AppointmentEdit,

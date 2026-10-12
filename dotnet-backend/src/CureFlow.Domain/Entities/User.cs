@@ -6,6 +6,7 @@ namespace CureFlow.Domain.Entities;
 /// <summary>Staff/Doctor user accounts of a hospital. Tied to a single tenant.</summary>
 public class User : TenantEntity
 {
+    public int SecurityRevision { get; set; } = 1;
     public string Name { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
@@ -21,3 +22,4 @@ public class User : TenantEntity
 
     public DateTime? LastLoginAt { get; set; }
 }
+

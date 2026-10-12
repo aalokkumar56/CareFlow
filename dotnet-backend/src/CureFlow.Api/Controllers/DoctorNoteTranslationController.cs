@@ -12,16 +12,16 @@ namespace CureFlow.Api.Controllers;
 [Authorize(Policy = "Permission:Clinical.Translate")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public class DoctorNoteTranslationController(
-    IClinicalRecordService notes, IHttpClientFactory clients, IConfiguration configuration) : ControllerBase
+    IClinicalRecordService notes, IHttpClientFactory clients, IConfiguration configuration, IExternalProcessingPolicy policy) : ControllerBase
 {
     public record TranslationRequest(string Language, int Revision);
 
     // This deliberately exposes only availability. The Google API key stays on
     // the server and is never sent to a browser.
     [HttpGet("translation/status")]
-    public IActionResult Status()
-        => Ok(new { available = !string.IsNullOrWhiteSpace(configuration["ClinicalTranslation:GoogleApiKey"]) });
-
+    public async Task<IActionResult> Status(CancellationToken ct)
+        => Ok(new { available = !string.IsNullOrWhiteSpace(configuration["ClinicalTranslation:GoogleApiKey"])
+            && await policy.IsAllowedAsync("google-translate", "clinical-note-translation", ct) });
     [HttpPost("{id:guid}/translation")]
     public async Task<IActionResult> Translate(Guid id, TranslationRequest request, CancellationToken ct)
     {
@@ -35,6 +35,8 @@ public class DoctorNoteTranslationController(
             .Where(s => !string.IsNullOrWhiteSpace(s)));
         if (request.Language == note.OriginalLanguage)
             return Ok(new { text, language = request.Language, revision = note.Revision });
+        if (text.Length > 32768) throw new ValidationException("Note exceeds translation processing limit.");
+        await policy.RequireDispatchAsync("google-translate", "clinical-note-translation", "ClinicalNote", id, note.Revision.ToString(), ct);
         var key = configuration["ClinicalTranslation:GoogleApiKey"];
         if (string.IsNullOrWhiteSpace(key))
             return StatusCode(503, new { message = "Translation has not been configured. Ask your administrator." });
@@ -67,3 +69,5 @@ public class DoctorNoteTranslationController(
         }
     }
 }
+
+

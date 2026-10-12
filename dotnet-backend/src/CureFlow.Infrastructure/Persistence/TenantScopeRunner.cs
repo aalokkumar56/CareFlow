@@ -23,7 +23,7 @@ public static class TenantScopeRunner
         CancellationToken ct = default)
     {
         using var scope = services.CreateScope();
-        var bootstrap = scope.ServiceProvider.GetRequiredService<ICureFlowDbSession>();
+        var bootstrap = scope.ServiceProvider.GetRequiredService<ICatalogueDbSession>();
         var tenants = await bootstrap.QueryAsync<Tenant>(
             """
             SELECT * FROM "Tenants"
@@ -38,6 +38,7 @@ public static class TenantScopeRunner
             var ctx = (CurrentTenant)tenantScope.ServiceProvider.GetRequiredService<ITenantContext>();
             ctx.TenantId = tenant.Id;
             ctx.IsAuthenticated = true;
+            ctx.ServiceIdentity = "tenant-background-worker";
             await action(tenantScope.ServiceProvider, tenant);
         }
     }

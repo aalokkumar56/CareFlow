@@ -1,0 +1,40 @@
+name: cureflow-production
+services:
+  api:
+    image: ${CUREFLOW_API_IMAGE:?Set an immutable reviewed API image tag or digest}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Database__AutoMigrate: "false"
+      Database__SeedCatalog: "false"
+      Database__Seed: "false"
+      Database__SeedPlatformUser: "false"
+      WhatsApp__UseTestPhone: "false"
+      Storage__PrivateRoot: /var/lib/cureflow/private-files/documents
+      ConnectionStrings__Default: ${CUREFLOW_PRODUCTION_RUNTIME_CONNECTION:?Provide restricted production runtime credentials}
+      ConnectionStrings__Identity: ${CUREFLOW_PRODUCTION_IDENTITY_CONNECTION:?Provide restricted production identity credentials}
+      ConnectionStrings__Catalogue: ${CUREFLOW_PRODUCTION_CATALOGUE_CONNECTION:?Provide read-only production catalogue credentials}
+      ConnectionStrings__PlatformIdentity: ${CUREFLOW_PRODUCTION_PLATFORM_IDENTITY_CONNECTION:?Provide restricted production platform login credentials}
+      ConnectionStrings__ControlPlane: ${CUREFLOW_PRODUCTION_CONTROL_PLANE_CONNECTION:?Provide restricted production platform credentials}
+      Jwt__Secret: ${CUREFLOW_PRODUCTION_JWT_SECRET:?Provide an independently protected production secret}
+      Cors__Origins: ${CUREFLOW_PRODUCTION_BROWSER_ORIGINS:?Provide exact production origins}
+      Cors__AllowCredentials: "false"
+      RateLimiting__Relaxed: "false"
+    ports:
+      - "127.0.0.1:${CUREFLOW_PRODUCTION_PORT:-5180}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - production-private-files:/var/lib/cureflow/private-files
+      - production-conversation-media:/app/whatsapp-media
+      - production-relay-media:/app/webhook-media
+      - production-logs:/app/logs
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  production-private-files:
+  production-conversation-media:
+  production-relay-media:
+  production-logs:

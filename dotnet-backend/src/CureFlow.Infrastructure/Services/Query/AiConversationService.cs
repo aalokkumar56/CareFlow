@@ -1,4 +1,4 @@
-﻿using CureFlow.Application.Common;
+using CureFlow.Application.Common;
 using CureFlow.Application.Interfaces;
 using CureFlow.Domain.Entities;
 using CureFlow.Domain.Enums;
@@ -48,7 +48,7 @@ public class AiConversationService : IAiConversationService
 
         var msgWhere = SqlFragments.WhereActive<Message>(ignoreTenant: false);
         var msgs = await _db.QueryAsync<Message>(
-            $"""SELECT "Direction", "Body" FROM "Messages" WHERE "ConversationId" = @conversationId AND {msgWhere} ORDER BY "CreatedAt" ASC""",
+            $"""SELECT "Direction", left("Body",2000) AS "Body" FROM "Messages" WHERE "ConversationId" = @conversationId AND {msgWhere} ORDER BY "CreatedAt" DESC LIMIT 20""",
             new { conversationId },
             ct: ct);
 
@@ -62,10 +62,11 @@ public class AiConversationService : IAiConversationService
                 ct: ct);
         }
 
-        var history = msgs.Select(m => (
+        var history = msgs.Reverse().Select(m => (
             m.Direction == MessageDirection.Inbound ? "inbound" : "outbound",
             m.Body));
 
         return (history, patient?.Name ?? conv.Name, patient?.Department);
     }
 }
+

@@ -27,14 +27,20 @@ public class StaffService : IStaffService
 
     public async Task<Guid> CreateAsync(CreateStaffProfileRequest req, CancellationToken ct = default)
     {
-        var user = await _db.GetByIdAsync<User>(req.UserId, ct: ct)
+        CureFlow.Application.Validation.StaffEligibilityRules.Profile(req.ConsultationFee,req.EmploymentType,req.Department,req.Specialization,req.Qualification,req.Shift,req.WardAssignment);
+        Guid profileId=Guid.Empty;
+        await _db.TransactionAsync(async db =>
+        {
+        var user = await db.QueryFirstOrDefaultAsync<User>("""
+            SELECT * FROM "Users" WHERE "Id"=@id AND "TenantId"=@TenantId AND NOT "IsDeleted" FOR UPDATE
+            """,new{id=req.UserId},ct:ct)
             ?? throw new NotFoundException("User");
 
-        if (!StaffRoles.Contains(user.Role))
+        if (!user.IsActive || !StaffRoles.Contains(user.Role))
             throw new ValidationException("User role must be Doctor, Nurse, Staff, or Reception");
 
-        var existing = await _db.QueryFirstOrDefaultAsync<StaffProfile>(
-            """SELECT * FROM "StaffProfiles" WHERE "UserId" = @userId LIMIT 1""",
+        var existing = await db.QueryFirstOrDefaultAsync<StaffProfile>(
+            """SELECT * FROM "StaffProfiles" WHERE "UserId" = @userId AND "TenantId"=@TenantId LIMIT 1""",
             new { userId = req.UserId }, ct: ct);
         if (existing != null)
             throw new ValidationException("Staff profile already exists for this user");
@@ -53,9 +59,11 @@ public class StaffService : IStaffService
             WardAssignment = req.WardAssignment,
             IsAvailable = req.IsAvailable,
         };
-        await _db.InsertAsync(profile, ct: ct);
-        await _audit.LogAsync("staff.create", "staff_profile", profile.Id.ToString(), new { req.UserId }, ct);
-        return profile.Id;
+        await db.InsertAsync(profile, ct: ct);
+        profileId=profile.Id;
+        },ct);
+        await _audit.LogAsync("staff.create", "staff_profile", profileId.ToString(), new { req.UserId }, ct);
+        return profileId;
     }
 
     public async Task<StaffProfileDto> GetAsync(Guid id, CancellationToken ct = default)
@@ -87,8 +95,16 @@ public class StaffService : IStaffService
 
     public async Task UpdateAsync(Guid id, UpdateStaffProfileRequest req, CancellationToken ct = default)
     {
-        var profile = await _db.GetByIdAsync<StaffProfile>(id, ct: ct)
+        CureFlow.Application.Validation.StaffEligibilityRules.Profile(req.ConsultationFee,req.EmploymentType,req.Department,req.Specialization,req.Qualification,req.Shift,req.WardAssignment);
+        await _db.TransactionAsync(async db =>
+        {
+        var profile = await db.QueryFirstOrDefaultAsync<StaffProfile>("""
+            SELECT * FROM "StaffProfiles" WHERE "Id"=@id AND "TenantId"=@TenantId AND NOT "IsDeleted" FOR UPDATE
+            """,new{id},ct:ct)
             ?? throw new NotFoundException("Staff profile");
+        var user=await db.GetByIdAsync<User>(profile.UserId,ct:ct)??throw new NotFoundException("User");
+        if(req.IsAvailable is true&&(!profile.IsActive||!user.IsActive||!StaffRoles.Contains(user.Role)))
+            throw new ValidationException("Only an active hospital staff user can be made available for new assignments.");
 
         if (req.Department != null) profile.Department = req.Department;
         if (req.Specialization != null) profile.Specialization = req.Specialization;
@@ -99,7 +115,8 @@ public class StaffService : IStaffService
         if (req.WardAssignment != null) profile.WardAssignment = req.WardAssignment;
         if (req.IsAvailable.HasValue) profile.IsAvailable = req.IsAvailable.Value;
 
-        await _db.UpdateAsync(profile, ct: ct);
+        await db.UpdateAsync(profile, ct: ct);
+        },ct);
         await _audit.LogAsync("staff.update", "staff_profile", id.ToString(), null, ct);
     }
 
@@ -114,17 +131,14 @@ public class StaffService : IStaffService
 
     public async Task<Guid> AddScheduleAsync(CreateDoctorScheduleRequest req, CancellationToken ct = default)
     {
-        var profile = await _db.GetByIdAsync<StaffProfile>(req.StaffProfileId, ct: ct)
-            ?? throw new NotFoundException("Staff profile");
-
         if (!TimeSpan.TryParse(req.StartTime, out var startTime))
             throw new DomainException("Invalid start time format. Use HH:mm or HH:mm:ss.", 400);
         if (!TimeSpan.TryParse(req.EndTime, out var endTime))
             throw new DomainException("Invalid end time format. Use HH:mm or HH:mm:ss.", 400);
-
+        CureFlow.Application.Validation.StaffScheduleRules.Validate(req.DayOfWeek, req.SpecificDate, startTime, endTime, req.Notes);
         var schedule = new DoctorSchedule
         {
-            StaffProfileId = profile.Id,
+            StaffProfileId = req.StaffProfileId,
             DayOfWeek = req.DayOfWeek,
             SpecificDate = DateTimeHelper.EnsureUtc(req.SpecificDate),
             StartTime = startTime,
@@ -132,7 +146,12 @@ public class StaffService : IStaffService
             IsAvailable = req.IsAvailable,
             Notes = req.Notes,
         };
-        await _db.InsertAsync(schedule, ct: ct);
+        await _db.TransactionAsync(async db =>
+        {
+            await RequireScheduleProfileAsync(db, req.StaffProfileId, req.IsAvailable, ct);
+            await db.InsertAsync(schedule, ct: ct);
+            await _audit.LogAsync("staff.schedule_create", "doctor_schedule", schedule.Id.ToString(), new { req.StaffProfileId }, ct);
+        }, ct);
         return schedule.Id;
     }
 
@@ -141,8 +160,8 @@ public class StaffService : IStaffService
         var rows = await _db.QueryAsync<DoctorSchedule>(
             """
             SELECT * FROM "DoctorSchedules"
-            WHERE "StaffProfileId" = @staffProfileId
-            ORDER BY "DayOfWeek", "StartTime"
+            WHERE "StaffProfileId" = @staffProfileId AND "TenantId"=@TenantId AND NOT "IsDeleted"
+            ORDER BY "DayOfWeek", "SpecificDate", "StartTime", "Id" LIMIT 200
             """,
             new { staffProfileId }, ct: ct);
         return rows.Select(MapSchedule).ToList();
@@ -150,7 +169,12 @@ public class StaffService : IStaffService
 
     public async Task UpdateScheduleAsync(Guid scheduleId, UpdateDoctorScheduleRequest req, CancellationToken ct = default)
     {
-        var schedule = await _db.GetByIdAsync<DoctorSchedule>(scheduleId, ct: ct)
+        await _db.TransactionAsync(async db =>
+        {
+        var schedule = await db.QueryFirstOrDefaultAsync<DoctorSchedule>("""
+            SELECT * FROM "DoctorSchedules" WHERE "Id"=@scheduleId AND "TenantId"=@TenantId
+                AND NOT "IsDeleted" FOR UPDATE
+            """, new { scheduleId }, ct: ct)
             ?? throw new NotFoundException("Schedule");
         if (req.DayOfWeek.HasValue) schedule.DayOfWeek = req.DayOfWeek;
         if (req.SpecificDate.HasValue) schedule.SpecificDate = DateTimeHelper.EnsureUtc(req.SpecificDate);
@@ -158,7 +182,27 @@ public class StaffService : IStaffService
         if (req.EndTime.HasValue) schedule.EndTime = req.EndTime.Value;
         if (req.IsAvailable.HasValue) schedule.IsAvailable = req.IsAvailable.Value;
         if (req.Notes != null) schedule.Notes = req.Notes;
-        await _db.UpdateAsync(schedule, ct: ct);
+        CureFlow.Application.Validation.StaffScheduleRules.Validate(schedule.DayOfWeek, schedule.SpecificDate,
+            schedule.StartTime, schedule.EndTime, schedule.Notes);
+        await RequireScheduleProfileAsync(db, schedule.StaffProfileId, schedule.IsAvailable, ct);
+        await db.UpdateAsync(schedule, ct: ct);
+        await _audit.LogAsync("staff.schedule_update", "doctor_schedule", schedule.Id.ToString(), null, ct);
+        }, ct);
+    }
+
+    private static async Task RequireScheduleProfileAsync(ICureFlowDbSession db, Guid profileId, bool available, CancellationToken ct)
+    {
+        if (profileId == Guid.Empty) throw new ValidationException("Select a valid staff profile.");
+        var profile = await db.QueryFirstOrDefaultAsync<StaffProfile>("""
+            SELECT * FROM "StaffProfiles" WHERE "Id"=@profileId AND "TenantId"=@TenantId
+                AND NOT "IsDeleted" FOR UPDATE
+            """, new { profileId }, ct: ct) ?? throw new NotFoundException("Staff profile");
+        var user = await db.QueryFirstOrDefaultAsync<User>("""
+            SELECT * FROM "Users" WHERE "Id"=@userId AND "TenantId"=@TenantId
+                AND NOT "IsDeleted" FOR SHARE
+            """, new { userId = profile.UserId }, ct: ct) ?? throw new NotFoundException("Staff user");
+        if (available && (!profile.IsActive || !profile.IsAvailable || !user.IsActive || !StaffRoles.Contains(user.Role)))
+            throw new ValidationException("Only an active available staff profile can have a bookable schedule.");
     }
 
     public async Task DeleteScheduleAsync(Guid scheduleId, CancellationToken ct = default)
@@ -191,7 +235,11 @@ public class StaffService : IStaffService
             param["id"] = id.Value;
         }
         if (availableOnly)
+        {
             filters.Add("sp.\"IsAvailable\" = true");
+            filters.Add("sp.\"IsActive\" = true");
+            filters.Add("u.\"IsActive\" = true");
+        }
         if (!string.IsNullOrWhiteSpace(q))
         {
             filters.Add("""

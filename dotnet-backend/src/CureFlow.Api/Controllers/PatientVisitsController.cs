@@ -33,7 +33,9 @@ public class PatientVisitsController : ControllerBase
     {
         if (req.PatientId == Guid.Empty)
             req = req with { PatientId = patientId };
-        var id = await _svc.CreateAsync(req, ct);
-        return Ok(new { id });
+        if(req.PatientId!=patientId)throw new CureFlow.Application.Common.ValidationException("Route and body patient must match.");
+        if(req.AppointmentId is null)throw new CureFlow.Application.Common.ValidationException("Supply an explicit source appointment.");
+        var revision=EncounterCommandHeaders.Revision(this,"appointment",req.AppointmentId.Value,req.ExpectedAppointmentRevision);
+        return EncounterCommandHeaders.Result(this,await _svc.StartEncounterAsync(req with{ExpectedAppointmentRevision=revision},EncounterCommandHeaders.Key(this),ct));
     }
 }

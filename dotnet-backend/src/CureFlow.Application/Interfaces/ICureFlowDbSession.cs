@@ -2,8 +2,8 @@ namespace CureFlow.Application.Interfaces;
 
 /// <summary>
 /// Scoped Dapper database session. Replaces runtime EF Core <c>ApplicationDbContext</c>.
-/// DB operations use an independent cancellation token so HTTP client disconnects
-/// do not surface as "The operation was canceled."
+/// DB operations honor cancellation and keep transaction-local tenant settings
+/// active until their transaction commits or rolls back.
 /// </summary>
 public interface ICureFlowDbSession
 {
@@ -12,6 +12,7 @@ public interface ICureFlowDbSession
 
     /// <summary>Current user id when authenticated.</summary>
     Guid? UserId { get; }
+    bool IsInTransaction => false;
 
     Task<IReadOnlyList<T>> QueryAsync<T>(
         string sql,
@@ -52,5 +53,5 @@ public interface ICureFlowDbSession
         where T : Domain.Common.BaseEntity, new();
 
     /// <summary>Run multiple statements in one transaction.</summary>
-    Task TransactionAsync(Func<ICureFlowDbSession, Task> action, CancellationToken ct = default);
+    Task TransactionAsync(Func<ICureFlowDbSession, Task> action, CancellationToken ct = default, bool ignoreTenant = false);
 }

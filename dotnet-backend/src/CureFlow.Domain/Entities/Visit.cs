@@ -6,6 +6,7 @@ namespace CureFlow.Domain.Entities;
 /// <summary>Clinical visit / encounter — central anchor for EHR records during a single visit.</summary>
 public class Visit : TenantEntity
 {
+    public long Revision { get; set; } = 1;
     public Guid PatientId { get; set; }
     public Guid? AppointmentId { get; set; }
     public Guid DoctorUserId { get; set; }

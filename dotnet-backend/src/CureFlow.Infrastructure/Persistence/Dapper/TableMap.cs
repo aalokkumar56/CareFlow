@@ -1,4 +1,5 @@
 using CureFlow.Domain.Common;
+using CureFlow.Domain.Entities.Organization;
 using CureFlow.Domain.Entities;
 using CureFlow.Domain.Entities.Ehr;
 using CureFlow.Domain.Entities.Lifestyle;
@@ -11,6 +12,19 @@ public static class TableMap
 {
     private static readonly Dictionary<Type, string> Map = new()
     {
+        [typeof(PlatformSession)] = "PlatformSessions",
+        [typeof(PrivateDocumentVersion)] = "PrivateDocumentVersions",
+        [typeof(DocumentScanEvidence)] = "DocumentScanEvidence",
+        [typeof(ClinicalAuditEvent)] = "ClinicalAuditEvents",
+        [typeof(IdempotencyRecord)] = "IdempotencyRecords",
+        [typeof(OutboxEvent)] = "OutboxEvents",
+        [typeof(OutboxConsumerReceipt)] = "OutboxConsumerReceipts",
+        [typeof(TenantProcessingPolicy)] = "TenantProcessingPolicies",
+        [typeof(OrganizationUnit)] = "OrganizationUnits",
+        [typeof(OrganizationStructureVersion)] = "OrganizationStructureVersions",
+        [typeof(FacilityResource)] = "FacilityResources",
+        [typeof(FacilityLocation)] = "FacilityLocations",
+        [typeof(FacilityOperatingSetting)] = "FacilityOperatingSettings",
         [typeof(Facility)] = "Facilities",
         [typeof(TenantApiActivity)] = "TenantApiActivities",
         [typeof(Tenant)] = "Tenants",
@@ -18,6 +32,27 @@ public static class TableMap
         [typeof(TenantOnboardingState)] = "TenantOnboardingStates",
         [typeof(PlatformAuditLog)] = "PlatformAuditLogs",
         [typeof(User)] = "Users",
+        [typeof(AppointmentBookingChange)] = "AppointmentBookingChanges",
+        [typeof(AppointmentWaitlistEntry)] = "AppointmentWaitlistEntries",
+        [typeof(AppointmentWaitlistOffer)] = "AppointmentWaitlistOffers",
+        [typeof(AppointmentWaitlistDecision)] = "AppointmentWaitlistDecisions",
+        [typeof(AppointmentReservation)] = "AppointmentReservations",
+        [typeof(AppointmentReservationSeat)] = "AppointmentReservationSeats",
+        [typeof(LeadConversion)] = "LeadConversions",
+        [typeof(PatientExportJob)] = "PatientExportJobs",
+        [typeof(PatientImportBatch)] = "PatientImportBatches",
+        [typeof(PatientImportRow)] = "PatientImportRows",
+        [typeof(PatientConfidentialityState)] = "PatientConfidentialityStates",
+        [typeof(PatientAlertVersion)] = "PatientAlertVersions",
+        [typeof(TemporaryPatientIdentity)] = "TemporaryPatientIdentities",
+        [typeof(PatientIdentityVerification)] = "PatientIdentityVerifications",
+        [typeof(PatientDemographicVersion)] = "PatientDemographicVersions",
+        [typeof(PatientMerge)] = "PatientMerges",
+        [typeof(PatientLinkJournal)] = "PatientLinkJournals",
+        [typeof(PatientIdentityReviewVersion)] = "PatientIdentityReviewVersions",
+        [typeof(PatientContactVersion)] = "PatientContactVersions",
+        [typeof(PatientIdentifier)] = "PatientIdentifiers",
+        [typeof(PatientIdentifierCounter)] = "PatientIdentifierCounters",
         [typeof(Patient)] = "Patients",
         [typeof(Lead)] = "Leads",
         [typeof(Conversation)] = "Conversations",
@@ -25,6 +60,8 @@ public static class TableMap
         [typeof(InternalNote)] = "InternalNotes",
         [typeof(Appointment)] = "Appointments",
         [typeof(TaskItem)] = "Tasks",
+        [typeof(ClinicalFollowUpWork)] = "ClinicalFollowUpWorks",
+        [typeof(ClinicalFollowUpVersion)] = "ClinicalFollowUpVersions",
         [typeof(ReferringDoctor)] = "ReferringDoctors",
         [typeof(Referral)] = "Referrals",
         [typeof(Campaign)] = "Campaigns",

@@ -5,6 +5,12 @@ namespace CureFlow.Domain.Entities;
 
 public class Appointment : TenantEntity
 {
+    public Guid? FacilityId { get; set; }
+    public Guid? ReservationId { get; set; }
+    public string? BookingKind { get; set; }
+    public Guid? FollowUpAppointmentId { get; set; }
+    public string? BookingPolicyVersion { get; set; }
+    public long Revision { get; set; } = 1;
     public Guid PatientId { get; set; }
     public string PatientName { get; set; } = string.Empty;
     public string PatientPhone { get; set; } = string.Empty;

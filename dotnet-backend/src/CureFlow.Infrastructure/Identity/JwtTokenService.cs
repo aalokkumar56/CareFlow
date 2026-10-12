@@ -10,11 +10,11 @@ namespace CureFlow.Infrastructure.Identity;
 
 public class JwtTokenService(IConfiguration config) : IJwtTokenService
 {
-    public string Issue(Guid userId, Guid tenantId, string email, string role, IEnumerable<string> permissions, TimeSpan? expires = null)
+    public string Issue(Guid userId, Guid tenantId, string email, string role, IEnumerable<string> permissions, TimeSpan? expires = null, Guid? sessionFamilyId = null, int securityRevision = 1)
     {
         var secret = config["Jwt:Secret"] ?? throw new InvalidOperationException("Jwt:Secret not configured");
         var issuer = config["Jwt:Issuer"] ?? "cureflow";
-        var audience = config["Jwt:Audience"] ?? "cureflow-api";
+        var audience = config["Jwt:TenantAudience"] ?? (config["Jwt:Audience"] ?? "cureflow-api") + ".tenant";
         var lifetime = expires ?? TimeSpan.FromHours(1);
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
@@ -26,9 +26,16 @@ public class JwtTokenService(IConfiguration config) : IJwtTokenService
             new(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new(JwtRegisteredClaimNames.Email, email),
             new("tenant_id", tenantId.ToString()),
+            new("actor_kind", "hospital"),
             new(ClaimTypes.Role, role ?? ""),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
+        if (sessionFamilyId.HasValue)
+        {
+            if (sessionFamilyId == Guid.Empty || securityRevision < 1) throw new InvalidOperationException("Invalid tenant session identity.");
+            claims.Add(new("tenant_session_id", sessionFamilyId.Value.ToString("D")));
+            claims.Add(new("tenant_session_revision", securityRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
         if (!string.Equals(role, roleNormalized, StringComparison.Ordinal))
             claims.Add(new(ClaimTypes.Role, roleNormalized));
         if (roleNormalized == "tenantowner")
@@ -48,11 +55,13 @@ public class JwtTokenService(IConfiguration config) : IJwtTokenService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    public string IssuePlatformUser(Guid platformUserId, string email, TimeSpan? expires = null)
+    public string IssuePlatformUser(Guid platformUserId, string email, TimeSpan? expires = null, Guid? sessionId = null, int securityRevision = 1)
     {
+        if (!sessionId.HasValue || sessionId.Value == Guid.Empty || securityRevision < 1)
+            throw new InvalidOperationException("A durable platform session is required.");
         var secret = config["Jwt:Secret"] ?? throw new InvalidOperationException("Jwt:Secret not configured");
         var issuer = config["Jwt:Issuer"] ?? "cureflow";
-        var audience = config["Jwt:Audience"] ?? "cureflow-api";
+        var audience = config["Jwt:PlatformAudience"] ?? (config["Jwt:Audience"] ?? "cureflow-api") + ".platform";
         var lifetime = expires ?? TimeSpan.FromHours(8);
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
@@ -63,6 +72,9 @@ public class JwtTokenService(IConfiguration config) : IJwtTokenService
             new(JwtRegisteredClaimNames.Sub, platformUserId.ToString()),
             new(JwtRegisteredClaimNames.Email, email),
             new("platform_user", "true"),
+            new("actor_kind", "platform"),
+            new("platform_session_id", sessionId.Value.ToString()),
+            new("platform_session_revision", securityRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new(ClaimTypes.Role, "platform_ops"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
@@ -78,3 +90,5 @@ public class JwtTokenService(IConfiguration config) : IJwtTokenService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
+
+

@@ -5,6 +5,10 @@ namespace CureFlow.Domain.Entities.Ehr;
 /// <summary>Lab report - link to an uploaded file or external lab.</summary>
 public class LabReport : TenantEntity
 {
+    public string? StorageKey { get; set; }
+    public Guid? StorageVersion { get; set; }
+    public string? Sha256 { get; set; }
+    public long? StoredLength { get; set; }
     public Guid PatientId { get; set; }
     public Guid? AppointmentId { get; set; }
     public Guid? VisitId { get; set; }
@@ -16,6 +20,8 @@ public class LabReport : TenantEntity
     public DateTime? ReportedAt { get; set; }
     public string? Results { get; set; }
     public string? Interpretation { get; set; }
+    public string? StoredContentType { get; set; }
+    public string? OriginalFileName { get; set; }
     public string? FileUrl { get; set; }
     public bool IsAbnormal { get; set; }
 }

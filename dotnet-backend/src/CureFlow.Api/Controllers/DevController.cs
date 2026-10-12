@@ -10,11 +10,11 @@ namespace CureFlow.Api.Controllers;
 [Route("api/dev")]
 public class DevController : ControllerBase
 {
-    private readonly ICureFlowDbSession _db;
+    private readonly IProvisioningDbSession _db;
     private readonly IPasswordHasher _hasher;
     private readonly IWebHostEnvironment _env;
 
-    public DevController(ICureFlowDbSession db, IPasswordHasher hasher, IWebHostEnvironment env)
+    public DevController(IProvisioningDbSession db, IPasswordHasher hasher, IWebHostEnvironment env)
     {
         _db = db;
         _hasher = hasher;

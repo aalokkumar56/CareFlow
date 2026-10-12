@@ -254,26 +254,11 @@ public class WhatsappApiService : IWhatsappApiService
         await _db.UpdateAsync(conversation, ct: ct);
     }
 
-    private async Task EnsureTenantScopeAsync(CancellationToken ct)
+    private Task EnsureTenantScopeAsync(CancellationToken ct)
     {
-        if (_tenant is not CurrentTenant current || current.TenantId != Guid.Empty)
-            return;
-
-        var tenantId = await _db.QueryFirstOrDefaultAsync<Guid?>(
-            """
-            SELECT "Id" FROM "Tenants"
-            WHERE "IsActive" = true AND "IsDeleted" = false
-            ORDER BY "CreatedAt" ASC
-            LIMIT 1
-            """,
-            ignoreTenant: true,
-            ct: ct);
-
-        if (!tenantId.HasValue || tenantId.Value == Guid.Empty)
-            return;
-
-        current.TenantId = tenantId.Value;
-        current.IsAuthenticated = true;
-        current.UserEmail ??= "whatsapp@api";
+        ct.ThrowIfCancellationRequested();
+        if (_tenant.TenantId == Guid.Empty)
+            throw new CureFlow.Application.Common.DomainException("Tenant identity is required.", 403);
+        return Task.CompletedTask;
     }
 }

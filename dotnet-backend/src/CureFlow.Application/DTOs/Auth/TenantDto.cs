@@ -1,4 +1,4 @@
-﻿using CureFlow.Domain.Entities;
+using CureFlow.Domain.Entities;
 using CureFlow.Domain.Enums;
 
 namespace CureFlow.Application.DTOs;
@@ -23,7 +23,7 @@ public record OnboardingStateDto(
     bool ProfileComplete,
     bool WhatsAppConnected,
     bool TeamInvited,
-    bool IsComplete);
+    bool IsComplete, IReadOnlyList<string>? RequiredSteps = null);
 
 public record PlatformAuthResponse(string AccessToken, string Email, string Name);
 
@@ -32,3 +32,6 @@ public record PlatformSetupStatusResponse(bool NeedsSetup);
 public record PlatformBootstrapRequest(string Name, string Email, string Password);
 
 public record RejectTenantRequest(string? Reason);
+public record PlatformSessionResponse(Guid Id, string Email, string Name, string Role, IReadOnlyList<string> Permissions, DateTime ExpiresAt);
+
+

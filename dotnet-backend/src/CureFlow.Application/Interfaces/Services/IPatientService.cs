@@ -16,6 +16,9 @@ public record ImportSkipRecord(int RowNumber, string? Name, string? PhoneRaw, st
 
 public interface IPatientService
 {
+    Task<PatientSearchPage> SearchAsync(string? q, string? status, string? department, string? tag,
+        string? inquirySource, Guid? afterId, int pageSize, CancellationToken ct = default);
+    Task<IdempotentCommandResult> RegisterAsync(CreatePatientRequest req,string key,CancellationToken ct = default);
     Task<Guid> CreateAsync(CreatePatientRequest req, CancellationToken ct = default);
     Task<PatientDetailDto> GetAsync(Guid id, CancellationToken ct = default);
     Task<PatientHolisticViewDto> GetHolisticViewAsync(Guid id, CancellationToken ct = default);

@@ -9,36 +9,46 @@ using Npgsql;
 
 namespace CureFlow.Infrastructure.Persistence.Dapper;
 
-public sealed class CureFlowDbSession : ICureFlowDbSession
+public class CureFlowDbSession : ICureFlowDbSession
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly DatabaseAuthority _authority;
     private readonly ITenantContext _tenant;
     private readonly NpgsqlConnection? _connection;
     private readonly NpgsqlTransaction? _transaction;
+    private readonly Guid? _scopeTenantId;
+    private readonly Guid? _scopeUserId;
 
-    public CureFlowDbSession(NpgsqlDataSource dataSource, ITenantContext tenant)
+    public CureFlowDbSession(NpgsqlDataSource dataSource, ITenantContext tenant) : this(dataSource, tenant, DatabaseAuthority.Tenant) { }
+
+    internal CureFlowDbSession(NpgsqlDataSource dataSource, ITenantContext tenant, DatabaseAuthority authority)
     {
         DapperSetup.EnsureInitialized();
         _dataSource = dataSource;
         _tenant = tenant;
+        _authority = authority;
     }
 
     private CureFlowDbSession(
         NpgsqlDataSource dataSource,
         ITenantContext tenant,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction)
+        NpgsqlTransaction transaction, DatabaseAuthority authority)
     {
         DapperSetup.EnsureInitialized();
         _dataSource = dataSource;
         _tenant = tenant;
+        _authority = authority;
         _connection = connection;
         _transaction = transaction;
+        _scopeTenantId = tenant.TenantId;
+        _scopeUserId = tenant.UserId;
     }
 
-    public Guid TenantId => _tenant.TenantId;
+    public Guid TenantId => _scopeTenantId ?? _tenant.TenantId;
 
     public Guid? UserId => _tenant.UserId;
+    public bool IsInTransaction => _transaction is not null;
 
     public async Task<IReadOnlyList<T>> QueryAsync<T>(
         string sql,
@@ -46,13 +56,15 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         bool ignoreTenant = false,
         CancellationToken ct = default)
     {
+        var parameters = MergeParams(param, ignoreTenant);
         await using var scope = await OpenScopeAsync(ignoreTenant, ct);
         var command = new CommandDefinition(
             sql,
-            MergeParams(param, ignoreTenant),
+            parameters,
             scope.Transaction,
-            cancellationToken: CancellationToken.None);
+            cancellationToken: ct);
         var rows = await scope.Connection.QueryAsync<T>(command);
+        await scope.CompleteAsync(ct);
         return rows.AsList();
     }
 
@@ -62,13 +74,16 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         bool ignoreTenant = false,
         CancellationToken ct = default)
     {
+        var parameters = MergeParams(param, ignoreTenant);
         await using var scope = await OpenScopeAsync(ignoreTenant, ct);
         var command = new CommandDefinition(
             sql,
-            MergeParams(param, ignoreTenant),
+            parameters,
             scope.Transaction,
-            cancellationToken: CancellationToken.None);
-        return await scope.Connection.QueryFirstOrDefaultAsync<T>(command);
+            cancellationToken: ct);
+        var result = await scope.Connection.QueryFirstOrDefaultAsync<T>(command);
+        await scope.CompleteAsync(ct);
+        return result;
     }
 
     public async Task<T> QuerySingleAsync<T>(
@@ -77,13 +92,16 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         bool ignoreTenant = false,
         CancellationToken ct = default)
     {
+        var parameters = MergeParams(param, ignoreTenant);
         await using var scope = await OpenScopeAsync(ignoreTenant, ct);
         var command = new CommandDefinition(
             sql,
-            MergeParams(param, ignoreTenant),
+            parameters,
             scope.Transaction,
-            cancellationToken: CancellationToken.None);
-        return await scope.Connection.QuerySingleAsync<T>(command);
+            cancellationToken: ct);
+        var result = await scope.Connection.QuerySingleAsync<T>(command);
+        await scope.CompleteAsync(ct);
+        return result;
     }
 
     public async Task<int> ExecuteAsync(
@@ -92,18 +110,22 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         bool ignoreTenant = false,
         CancellationToken ct = default)
     {
+        var parameters = MergeParams(param, ignoreTenant);
         await using var scope = await OpenScopeAsync(ignoreTenant, ct);
         var command = new CommandDefinition(
             sql,
-            MergeParams(param, ignoreTenant),
+            parameters,
             scope.Transaction,
-            cancellationToken: CancellationToken.None);
-        return await scope.Connection.ExecuteAsync(command);
+            cancellationToken: ct);
+        var result = await scope.Connection.ExecuteAsync(command);
+        await scope.CompleteAsync(ct);
+        return result;
     }
 
     public async Task InsertAsync<T>(T entity, bool ignoreTenant = false, CancellationToken ct = default)
         where T : BaseEntity
     {
+        ValidateEntityScope(entity, ignoreTenant);
         EntityPersistence.PrepareInsert(entity, _tenant, ignoreTenant);
 
         var table = TableMap.GetTableName<T>();
@@ -116,12 +138,13 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         foreach (var column in columns)
             param[column.Name] = column.GetValue(entity);
 
-        await ExecuteAsync(sql, param, ignoreTenant, ct);
+        await ExecuteEntityMutationAsync(entity, "create", sql, param, ignoreTenant, ct);
     }
 
     public async Task UpdateAsync<T>(T entity, bool ignoreTenant = false, CancellationToken ct = default)
         where T : BaseEntity
     {
+        ValidateEntityScope(entity, ignoreTenant);
         EntityPersistence.PrepareUpdate(entity, _tenant);
 
         var table = TableMap.GetTableName<T>();
@@ -141,7 +164,7 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         foreach (var column in columns)
             param[column.Name] = column.GetValue(entity);
 
-        await ExecuteAsync(sql, param, ignoreTenant, ct);
+        await ExecuteEntityMutationAsync(entity, "update", sql, param, ignoreTenant, ct);
     }
 
     public async Task<T?> GetByIdAsync<T>(Guid id, bool ignoreTenant = false, CancellationToken ct = default)
@@ -169,63 +192,114 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         return await QueryAsync<T>(sql, param, ignoreTenant, ct);
     }
 
-    public async Task TransactionAsync(Func<ICureFlowDbSession, Task> action, CancellationToken ct = default)
+    public async Task TransactionAsync(Func<ICureFlowDbSession, Task> action, CancellationToken ct = default, bool ignoreTenant = false)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(CancellationToken.None);
-        await PostgresRlsSession.ConfigureAsync(
-            connection,
-            _tenant.TenantId,
-            platformBypass: _tenant.TenantId == Guid.Empty,
-            ct: CancellationToken.None);
-        await using var transaction = await connection.BeginTransactionAsync(CancellationToken.None);
+        ValidateScope(ignoreTenant);
+        ct.ThrowIfCancellationRequested();
+        if (_connection is not null)
+        {
+            // The outer call owns commit/rollback and connection disposal.
+            await action(this);
+            return;
+        }
 
-        var session = new CureFlowDbSession(_dataSource, _tenant, connection, transaction);
-        try
-        {
-            await action(session);
-            await transaction.CommitAsync(CancellationToken.None);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(CancellationToken.None);
-            throw;
-        }
+        await using var scope = await OpenScopeAsync(ignoreTenant, ct);
+        var session = new CureFlowDbSession(_dataSource, _tenant, scope.Connection, scope.Transaction!, _authority);
+        await action(session);
+        await scope.CompleteAsync(ct);
+    }
+
+    private void ValidateScope(bool ignoreTenant)
+    {
+        if (_scopeTenantId.HasValue && _scopeTenantId.Value != _tenant.TenantId)
+            throw new DomainException("Tenant identity changed during the transaction.", 403);
+        if (_scopeTenantId.HasValue && _scopeUserId != _tenant.UserId)
+            throw new DomainException("Actor identity changed during the transaction.", 403);
+        if (_authority == DatabaseAuthority.Platform && (!_tenant.IsPlatformUser || !_tenant.IsAuthenticated || !_tenant.UserId.HasValue || _tenant.TenantId != Guid.Empty))
+            throw new DomainException("Platform operator identity is required.", 403);
+        if (_authority == DatabaseAuthority.Tenant && _tenant.TenantId == Guid.Empty)
+            throw new DomainException("Tenant identity is required for this database operation.", 403);
+    }
+
+    private void ValidateEntityScope(BaseEntity entity, bool ignoreTenant)
+    {
+        ValidateScope(ignoreTenant);
+        if (entity is TenantEntity tenantEntity && _tenant.TenantId != Guid.Empty
+            && tenantEntity.TenantId != Guid.Empty && tenantEntity.TenantId != _tenant.TenantId)
+            throw new DomainException("Tenant identity does not match the current scope.", 403);
     }
 
     private object? MergeParams(object? param, bool ignoreTenant)
     {
-        if (ignoreTenant || _tenant.TenantId == Guid.Empty)
+        ValidateScope(ignoreTenant);
+        if (_tenant.TenantId == Guid.Empty)
             return param;
 
-        if (param is null)
-            return new { TenantId = _tenant.TenantId };
-
-        if (param is IDictionary<string, object?> dict)
-        {
-            if (!dict.ContainsKey("TenantId"))
-                dict["TenantId"] = _tenant.TenantId;
-            return dict;
-        }
-
-        var merged = SqlParam.Merge(param);
-        if (!merged.ContainsKey("TenantId"))
-            merged["TenantId"] = _tenant.TenantId;
+        var merged = param is DynamicParameters dynamicParams
+            ? dynamicParams.ParameterNames.ToDictionary(name => name, name => dynamicParams.Get<object?>(name), StringComparer.OrdinalIgnoreCase)
+            : SqlParam.Merge(param);
+        if (merged.TryGetValue("TenantId", out var supplied)
+            && (!Guid.TryParse(supplied?.ToString(), out var tenantId) || tenantId != _tenant.TenantId))
+            throw new DomainException("Tenant identity does not match the current scope.", 403);
+        merged["TenantId"] = _tenant.TenantId;
         return merged;
     }
 
     private async Task<ConnectionScope> OpenScopeAsync(bool ignoreTenant, CancellationToken ct)
     {
+        ValidateScope(ignoreTenant);
+        ct.ThrowIfCancellationRequested();
         if (_connection is not null)
-            return new ConnectionScope(_connection, _transaction, ownsConnection: false);
+            return new ConnectionScope(_connection, _transaction!, ownsConnection: false);
 
-        // RLS setup must complete before any tenant-scoped SQL and before the
-        // connection returns to the pool. Use CancellationToken.None here (same as
-        // TransactionAsync) so aborted HTTP requests do not leave pooled connections
-        // in a half-configured state or surface OperationCanceledException as 500s.
-        var connection = await _dataSource.OpenConnectionAsync(CancellationToken.None);
-        var platformBypass = ignoreTenant && _tenant.TenantId == Guid.Empty;
-        await PostgresRlsSession.ConfigureAsync(connection, _tenant.TenantId, platformBypass, CancellationToken.None);
-        return new ConnectionScope(connection, null, ownsConnection: true);
+        var connection = await _dataSource.OpenConnectionAsync(ct);
+        NpgsqlTransaction? transaction = null;
+        try
+        {
+            transaction = await connection.BeginTransactionAsync(ct);
+            if (_authority != DatabaseAuthority.Provisioning)
+                await DatabaseRoleBoundary.ValidateAsync(connection, transaction, _authority, ct);
+            await PostgresRlsSession.ConfigureAsync(connection, _tenant.TenantId,
+                platformBypass: _authority != DatabaseAuthority.Tenant && _tenant.TenantId == Guid.Empty, ct: ct, transaction: transaction,
+                actorId: _authority == DatabaseAuthority.Tenant && _tenant.IsAuthenticated && !_tenant.IsPlatformUser
+                    && string.IsNullOrEmpty(_tenant.ServiceIdentity) ? _tenant.UserId : null);
+            return new ConnectionScope(connection, transaction, ownsConnection: true);
+        }
+        catch
+        {
+            try
+            {
+                if (transaction is not null) await transaction.DisposeAsync();
+            }
+            finally
+            {
+                await connection.DisposeAsync();
+            }
+            throw;
+        }
+    }
+
+    private async Task ExecuteEntityMutationAsync(BaseEntity entity, string operation, string sql, object param, bool ignoreTenant, CancellationToken ct)
+    {
+        var parameters = MergeParams(param, ignoreTenant);
+        await using var scope = await OpenScopeAsync(ignoreTenant, ct);
+        var affected = await scope.Connection.ExecuteAsync(new CommandDefinition(sql, parameters, scope.Transaction, cancellationToken: ct));
+        // Explicit clinical entity hooks; no SQL parsing, request/body logging or PHI snapshots.
+        var clinical = entity is CureFlow.Domain.Entities.Patient or CureFlow.Domain.Entities.Visit or CureFlow.Domain.Entities.Appointment
+            || (entity is TenantEntity && entity.GetType().Namespace is "CureFlow.Domain.Entities.Ehr" or "CureFlow.Domain.Entities.Lifestyle"
+                && entity is not CureFlow.Domain.Entities.Ehr.ClinicalAuditEvent && entity is not CureFlow.Domain.Entities.Ehr.PrivateDocumentVersion);
+        if (affected > 0 && clinical && _authority == DatabaseAuthority.Tenant)
+        {
+            var patientId = entity is CureFlow.Domain.Entities.Patient ? entity.Id
+                : entity.GetType().GetProperty("PatientId")?.GetValue(entity) as Guid?;
+            var revision = (entity.GetType().GetProperty("Revision")?.GetValue(entity) ?? entity.GetType().GetProperty("StorageVersion")?.GetValue(entity))?.ToString();
+            var audit = CureFlow.Infrastructure.Auditing.ClinicalAccessAuditService.Build(_tenant,
+                new ClinicalAccessEvidence(patientId, entity.GetType().Name, entity.Id, entity.IsDeleted ? "soft_delete" : operation, "committed", revision, _tenant.UserId.HasValue ? "care" : "operations"));
+            EntityPersistence.PrepareInsert(audit, _tenant);
+            var statement = EntityPersistence.BuildInsert(audit);
+            await scope.Connection.ExecuteAsync(new CommandDefinition(statement.Sql, statement.Parameters, scope.Transaction, cancellationToken: ct));
+        }
+        await scope.CompleteAsync(ct);
     }
 
     private static string Quote(string identifier) => "\"" + identifier + "\"";
@@ -270,7 +344,7 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
         private readonly NpgsqlConnection _connection;
         private readonly bool _ownsConnection;
 
-        public ConnectionScope(NpgsqlConnection connection, NpgsqlTransaction? transaction, bool ownsConnection)
+        public ConnectionScope(NpgsqlConnection connection, NpgsqlTransaction transaction, bool ownsConnection)
         {
             _connection = connection;
             Transaction = transaction;
@@ -279,9 +353,23 @@ public sealed class CureFlowDbSession : ICureFlowDbSession
 
         public NpgsqlConnection Connection => _connection;
 
-        public NpgsqlTransaction? Transaction { get; }
+        public NpgsqlTransaction Transaction { get; }
 
-        public ValueTask DisposeAsync() =>
-            _ownsConnection ? _connection.DisposeAsync() : ValueTask.CompletedTask;
+        public Task CompleteAsync(CancellationToken ct) =>
+            _ownsConnection ? Transaction.CommitAsync(ct) : Task.CompletedTask;
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!_ownsConnection) return;
+            try
+            {
+                // Disposal rolls back any transaction whose command or commit failed.
+                await Transaction.DisposeAsync();
+            }
+            finally
+            {
+                await _connection.DisposeAsync();
+            }
+        }
     }
 }

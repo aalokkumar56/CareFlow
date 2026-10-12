@@ -1,10 +1,13 @@
 using System.Text.Json;
 using ExcelDataReader;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
+using CureFlow.Infrastructure.Identity;
 using CureFlow.Application.Common;
 using CureFlow.Application.DTOs;
 using CureFlow.Application.Interfaces;
 using CureFlow.Application.Notifications;
+using CureFlow.Application.Validation;
 using CureFlow.Domain.Entities;
 using CureFlow.Domain.Entities.Ehr;
 using CureFlow.Domain.Entities.Lifestyle;
@@ -21,14 +24,19 @@ public class PatientService : IPatientService
     private readonly INotificationPublisher _notifications;
     private readonly ITenantContext _tenant;
     private readonly ILogger<PatientService> _logger;
+    private readonly IIdempotentCommandExecutor _commands;
+    private readonly IPatientIdentifierService _identifiers;
+    private readonly IUserPermissionService _permissions;
+    private readonly IConfiguration _config;
 
     public PatientService(
         ICureFlowDbSession db,
         IAuditService audit,
         INotificationPublisher notifications,
         ITenantContext tenant,
-        ILogger<PatientService> logger)
+        ILogger<PatientService> logger, IIdempotentCommandExecutor commands, IPatientIdentifierService identifiers, IUserPermissionService permissions, IConfiguration config)
     {
+        _commands=commands; _identifiers=identifiers; _permissions=permissions; _config=config;
         _db = db;
         _audit = audit;
         _logger = logger;
@@ -36,8 +44,32 @@ public class PatientService : IPatientService
         _tenant = tenant;
     }
 
+    public Task<IdempotentCommandResult> RegisterAsync(CreatePatientRequest req,string key,CancellationToken ct=default)
+    {
+        if(req.FacilityId is null||req.FacilityId==Guid.Empty)throw new ValidationException("Supply an explicit registration facility.");
+        var horizon=_config.GetValue<int?>("PatientRegistration:ApprovedRetryHorizonHours");
+        if(horizon is not >0 or >8760)throw new DomainException("Registration retry policy is not configured.",503);
+        return _commands.ExecuteAsync("patient.register",key,req,TimeSpan.FromHours(horizon.Value),async(store,token)=>{
+            if(!_tenant.IsAuthenticated||_tenant.IsPlatformUser||!_tenant.UserId.HasValue)throw new ForbiddenException();
+            var actor=await store.QueryFirstOrDefaultAsync<User>("""
+                SELECT * FROM "Users" WHERE "Id"=@id AND "TenantId"=@TenantId AND "IsActive" AND NOT "IsDeleted" FOR SHARE
+                """,new{id=_tenant.UserId.Value},ct:token);
+            if(actor is null||!(await _permissions.GetPermissionCodesAsync(actor,token,store)).Contains(CureFlowPermissions.PatientCreate,StringComparer.Ordinal))throw new ForbiddenException();
+            var facility=await store.QueryFirstOrDefaultAsync<Guid?>("""
+                SELECT public.cureflow_lock_active_facility(@TenantId,@facilityId)
+                """,new{facilityId=req.FacilityId.Value},ct:token);
+            if(!facility.HasValue)throw new NotFoundException("Active registration facility");
+        },async(store,token)=>{
+            // All existing local notification/audit writes use the same scoped session and outer transaction.
+            var id=await CreateAsync(req,token);
+            await _identifiers.AllocateLocalMrnAsync(store,req.FacilityId.Value,id,token);
+            return(new CommandReceipt(id,null,CommandOutcome.Created),201);
+        },ct);
+    }
     public async Task<Guid> CreateAsync(CreatePatientRequest req, CancellationToken ct = default)
     {
+        PatientDemographicRules.ValidateSource(req.DemographicSource);
+        PatientDemographicRules.ValidateBirth(req.BirthDate);
         var p = new Patient
         {
             Name = req.Name.Trim(),
@@ -57,7 +89,24 @@ public class PatientService : IPatientService
             Notes = req.Notes,
             Occupation = req.Occupation,
         };
-        await _db.InsertAsync(p, ct: ct);
+        p.BirthDatePrecision="unknown";
+        PatientDemographicRules.Apply(p,req.BirthDate);
+        await _db.TransactionAsync(async db =>
+        {
+            if (req.ReferringDoctorId.HasValue)
+            {
+                if (req.ReferringDoctorId == Guid.Empty)
+                    throw new ValidationException("Select a valid referring doctor.");
+                _ = await db.QueryFirstOrDefaultAsync<ReferringDoctor>("""
+                    SELECT "Id" FROM "ReferringDoctors" WHERE "Id"=@id AND "TenantId"=@TenantId
+                        AND NOT "IsDeleted" AND "IsActive" FOR SHARE
+                    """, new { id = req.ReferringDoctorId.Value }, ct: ct)
+                    ?? throw new NotFoundException("Referring doctor");
+            }
+            await RequirePatientWriteAsync(db,CureFlowPermissions.PatientCreate,ct);
+            await SetDemographicSourceAsync(db,req.DemographicSource,ct);
+            await db.InsertAsync(p, ct: ct);
+        }, ct);
         await _audit.LogAsync("patient.create", "patient", p.Id.ToString(), null, ct);
 
         await _notifications.PublishAsync(new NotificationPublishRequest(
@@ -68,7 +117,7 @@ public class PatientService : IPatientService
             EntityType: "patient",
             EntityId: p.Id,
             ActionUrl: $"/patients/{p.Id}",
-            CreatorUserId: _tenant.UserId), ct);
+            CreatorUserId: _tenant.UserId, DedupeKey: $"patient-created:{p.Id:N}"), ct);
 
         return p.Id;
     }
@@ -137,6 +186,9 @@ public class PatientService : IPatientService
         int page, int pageSize, CancellationToken ct = default,
         string sortBy = "name", string sortDirection = "asc", bool includeAppointments = false)
     {
+        PatientSearchRules.Validate(q, status, department, tag, inquirySource);
+        if (page > int.MaxValue / Pagination.MaxPageSize)
+            throw new ValidationException("Patient page is outside the supported range. Use cursor search for long listings.");
         var direction = sortDirection.ToLowerInvariant() switch
         {
             "asc" => "ASC",
@@ -166,7 +218,7 @@ public class PatientService : IPatientService
         if (!string.IsNullOrWhiteSpace(q))
         {
             filters.Add("(\"Name\" ILIKE @q OR \"Phone\" ILIKE @q OR (\"Email\" IS NOT NULL AND \"Email\" ILIKE @q))");
-            param["q"] = $"%{q}%";
+            param["q"] = PatientSearchRules.Pattern(q);
         }
         if (!string.IsNullOrEmpty(status) && EnumParseHelper.TryParseSnakeCase<LeadStatus>(status, out var st))
         {
@@ -226,10 +278,94 @@ public class PatientService : IPatientService
         };
     }
 
+    public async Task<PatientSearchPage> SearchAsync(string? q, string? status, string? department, string? tag,
+        string? inquirySource, Guid? afterId, int pageSize, CancellationToken ct = default)
+    {
+        PatientSearchRules.Validate(q, status, department, tag, inquirySource);
+        if (pageSize is < 1 or > 100 || afterId == Guid.Empty)
+            throw new ValidationException("Select a page size from 1 to 100 and a valid patient cursor.");
+        int? state = !string.IsNullOrWhiteSpace(status) && EnumParseHelper.TryParseSnakeCase<LeadStatus>(status, out var parsed)
+            ? (int)parsed : null;
+        PatientSearchPage? result = null;
+        await _db.TransactionAsync(async db =>
+        {
+            // The cursor contains an already returned local ID, never demographics or arbitrary SQL.
+            // CreatedAt is immutable for normal patient edits; Id breaks every timestamp/name tie.
+            var boundary = afterId.HasValue ? await db.QueryFirstOrDefaultAsync<Patient>("""
+                SELECT "Id", "CreatedAt" FROM "Patients"
+                WHERE "Id"=@afterId AND "TenantId"=@TenantId AND NOT "IsDeleted"
+                """, new { afterId }, ct: ct) : null;
+            if (afterId.HasValue && boundary is null)
+                throw new ValidationException("The patient cursor is unavailable. Restart this search.");
+            var rows = await db.QueryAsync<PatientSearchRow>("""
+                SELECT "Id", "Name", "Phone", "Age", "Gender", "Department"
+                FROM "Patients"
+                WHERE "TenantId"=@TenantId AND NOT "IsDeleted"
+                    AND (CAST(@q AS text) IS NULL OR "Name" ILIKE @q OR "Phone" ILIKE @q OR "Email" ILIKE @q)
+                    AND (CAST(@state AS integer) IS NULL OR "Status"=@state)
+                    AND (CAST(@department AS text) IS NULL OR "Department"=@department)
+                    AND (CAST(@tag AS text) IS NULL OR "Tags" @> CAST(@tag AS jsonb))
+                    AND (CAST(@source AS text) IS NULL OR "InquirySource"=@source)
+                    AND (CAST(@afterId AS uuid) IS NULL OR ("CreatedAt", "Id") > (CAST(@afterCreated AS timestamptz), CAST(@afterId AS uuid)))
+                ORDER BY "CreatedAt" ASC, "Id" ASC LIMIT @take
+                """, new
+                {
+                    q = PatientSearchRules.Pattern(q), state,
+                    department = string.IsNullOrWhiteSpace(department) ? null : department,
+                    tag = string.IsNullOrWhiteSpace(tag) ? null : JsonSerializer.Serialize(new[] { tag }),
+                    source = string.IsNullOrWhiteSpace(inquirySource) ? null : inquirySource,
+                    afterId, afterCreated = boundary?.CreatedAt, take = pageSize + 1
+                }, ct: ct);
+            var items = rows.Take(pageSize).Select(p => new PatientSearchItem(p.Id, p.Name, p.Phone, p.Age, p.Gender, p.Department)).ToList();
+            result = new(items, rows.Count > pageSize ? items[^1].Id : null);
+        }, ct);
+        return result!;
+    }
+
+    private sealed class PatientSearchRow
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public int? Age { get; set; }
+        public Gender Gender { get; set; }
+        public string? Department { get; set; }
+    }
+
     public async Task UpdateAsync(Guid id, UpdatePatientRequest req, CancellationToken ct = default)
     {
-        var p = await _db.GetByIdAsync<Patient>(id, ct: ct)
+        PatientDemographicRules.ValidateSource(req.DemographicSource);
+        PatientDemographicRules.ValidateBirth(req.BirthDate);
+        if(req.DateOfBirth.HasValue&&req.BirthDate is not null)throw new ValidationException("Use either legacy date_of_birth or explicit calendar evidence.");
+        if(req.ExpectedETag is null)throw new DomainException("Supply the current patient ETag.",428);
+        var clear = req.ClearFields ?? [];
+        var clearable = new Dictionary<string,string>(StringComparer.Ordinal)
+        {
+            ["email"]=nameof(Patient.Email),["age"]=nameof(Patient.Age),["date_of_birth"]=nameof(Patient.DateOfBirth),
+            ["department"]=nameof(Patient.Department),["assigned_staff_id"]=nameof(Patient.AssignedStaffId),
+            ["notes"]=nameof(Patient.Notes),["follow_up_date"]=nameof(Patient.FollowUpDate),
+            ["occupation"]=nameof(Patient.Occupation),["marital_status"]=nameof(Patient.MaritalStatus),
+            ["gov_id_type"]=nameof(Patient.GovIdType),["gov_id_number"]=nameof(Patient.GovIdNumber),
+            ["address_line1"]=nameof(Patient.AddressLine1),["address_line2"]=nameof(Patient.AddressLine2),
+            ["city"]=nameof(Patient.City),["state"]=nameof(Patient.State),["pincode"]=nameof(Patient.Pincode),
+            ["emergency_contact_name"]=nameof(Patient.EmergencyContactName),["emergency_contact_phone"]=nameof(Patient.EmergencyContactPhone),
+            ["emergency_contact_relation"]=nameof(Patient.EmergencyContactRelation)
+        };
+        if(clear.Count>clearable.Count||clear.Distinct(StringComparer.Ordinal).Count()!=clear.Count||clear.Any(x=>x is null||!clearable.ContainsKey(x)))
+            throw new ValidationException("Supply distinct supported optional fields in clear_fields.");
+        foreach(var field in clear)
+            if(typeof(UpdatePatientRequest).GetProperty(clearable[field])!.GetValue(req) is not null)
+                throw new ValidationException("A field cannot be supplied and explicitly cleared in the same request.");
+        await _db.TransactionAsync(async db =>
+        {
+        await RequirePatientWriteAsync(db,CureFlowPermissions.PatientEdit,ct);
+        var p = await db.QueryFirstOrDefaultAsync<Patient>("""
+            SELECT * FROM "Patients" WHERE "Id"=@id AND "TenantId"=@TenantId AND NOT "IsDeleted" FOR UPDATE
+            """,new{id},ct:ct)
             ?? throw new NotFoundException("Patient");
+        if(PatientConcurrency.Tag(p)!=req.ExpectedETag)throw new DomainException("Patient details changed. Reload before saving your edits.",412);
+        if(req.BirthDate is not null&&p.DateOfBirth.HasValue&&!clear.Contains("date_of_birth",StringComparer.Ordinal))
+            throw new ValidationException("Explicitly clear legacy date_of_birth when replacing it with calendar evidence; the original remains in history.");
         if (req.Name != null) p.Name = req.Name;
         if (req.Phone != null) p.Phone = WhatsappPhoneHelper.Normalize(req.Phone);
         if (req.Email != null) p.Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
@@ -237,28 +373,48 @@ public class PatientService : IPatientService
         if (req.Age.HasValue) p.Age = req.Age.Value;
         if (req.Gender.HasValue) p.Gender = req.Gender.Value;
         if (req.BloodGroup.HasValue) p.BloodGroup = req.BloodGroup.Value;
-        p.DateOfBirth = DateTimeHelper.EnsureUtc(req.DateOfBirth);
+        if(req.DateOfBirth.HasValue)
+        {
+            p.DateOfBirth = DateTimeHelper.EnsureUtc(req.DateOfBirth);
+            p.BirthDatePrecision="legacy_unspecified";p.BirthDateYear=null;p.BirthDateMonth=null;p.BirthDateDay=null;
+        }
         if (req.Department != null) p.Department = req.Department;
         if (req.Status.HasValue) p.Status = req.Status.Value;
-        if (req.AssignedStaffId.HasValue) p.AssignedStaffId = req.AssignedStaffId.Value;
+        if (req.AssignedStaffId.HasValue)
+        {
+            if (req.AssignedStaffId == Guid.Empty)
+                throw new ValidationException("Select a valid staff user or explicitly clear the assignment.");
+            _ = await db.QueryFirstOrDefaultAsync<User>("""
+                SELECT "Id" FROM "Users" WHERE "Id"=@id AND "TenantId"=@TenantId
+                    AND NOT "IsDeleted" AND "IsActive" FOR SHARE
+                """, new { id = req.AssignedStaffId.Value }, ct: ct)
+                ?? throw new NotFoundException("Staff user");
+            p.AssignedStaffId = req.AssignedStaffId.Value;
+        }
         if (req.Tags != null) p.Tags = req.Tags;
         if (req.Notes != null) p.Notes = req.Notes;
-        p.FollowUpDate = DateTimeHelper.EnsureUtc(req.FollowUpDate);
-        p.Occupation = req.Occupation;
-        p.MaritalStatus = req.MaritalStatus;
-        p.GovIdType = req.GovIdType;
-        p.GovIdNumber = req.GovIdNumber;
-        p.AddressLine1 = req.AddressLine1;
-        p.AddressLine2 = req.AddressLine2;
-        p.City = req.City;
-        p.State = req.State;
-        p.Pincode = req.Pincode;
-        p.EmergencyContactName = req.EmergencyContactName;
-        p.EmergencyContactPhone = req.EmergencyContactPhone != null
-            ? WhatsappPhoneHelper.Normalize(req.EmergencyContactPhone)
-            : null;
-        p.EmergencyContactRelation = req.EmergencyContactRelation;
-        await _db.UpdateAsync(p, ct: ct);
+        if(req.FollowUpDate.HasValue)p.FollowUpDate = DateTimeHelper.EnsureUtc(req.FollowUpDate);
+        if(req.Occupation is not null)p.Occupation = req.Occupation;
+        if(req.MaritalStatus is not null)p.MaritalStatus = req.MaritalStatus;
+        if(req.GovIdType is not null)p.GovIdType = req.GovIdType;
+        if(req.GovIdNumber is not null)p.GovIdNumber = req.GovIdNumber;
+        if(req.AddressLine1 is not null)p.AddressLine1 = req.AddressLine1;
+        if(req.AddressLine2 is not null)p.AddressLine2 = req.AddressLine2;
+        if(req.City is not null)p.City = req.City;
+        if(req.State is not null)p.State = req.State;
+        if(req.Pincode is not null)p.Pincode = req.Pincode;
+        if(req.EmergencyContactName is not null)p.EmergencyContactName = req.EmergencyContactName;
+        if(req.EmergencyContactPhone is not null)p.EmergencyContactPhone = WhatsappPhoneHelper.Normalize(req.EmergencyContactPhone);
+        if(req.EmergencyContactRelation is not null)p.EmergencyContactRelation = req.EmergencyContactRelation;
+        foreach(var field in clear)typeof(Patient).GetProperty(clearable[field])!.SetValue(p,null);
+        if(clear.Contains("date_of_birth",StringComparer.Ordinal))
+        {p.BirthDatePrecision="unknown";p.BirthDateYear=null;p.BirthDateMonth=null;p.BirthDateDay=null;}
+        PatientDemographicRules.Apply(p,req.BirthDate);
+        await SetDemographicSourceAsync(db,req.DemographicSource,ct);
+        await db.UpdateAsync(p, ct: ct);
+        var persisted=await db.GetByIdAsync<Patient>(id,ct:ct)??throw new NotFoundException("Patient");
+        req.ResultETag=PatientConcurrency.Tag(persisted);
+        },ct);
         await _audit.LogAsync("patient.update", "patient", id.ToString(), null, ct);
     }
 
@@ -271,357 +427,10 @@ public class PatientService : IPatientService
         await _audit.LogAsync("patient.delete", "patient", id.ToString(), null, ct);
     }
 
-    public async Task<ImportResult> ImportCsvAsync(Stream csv, CancellationToken ct = default)
-    {
-        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-        using var reader = ExcelReaderFactory.CreateCsvReader(csv, new ExcelReaderConfiguration
-        {
-            FallbackEncoding = System.Text.Encoding.UTF8,
-            AutodetectSeparators = [','],
-        });
-        if (!reader.Read()) return new ImportResult(0, 0, 0, []);
-        string[] ReadCells() => Enumerable.Range(0, reader.FieldCount)
-            .Select(index => reader.GetValue(index)?.ToString()?.Trim() ?? "").ToArray();
-        var header = ReadCells().Select(h => h.ToLowerInvariant()).ToArray();
-        var headerLine = string.Join(",", header);
-
-        // Flexible header matching
-        int FindCol(string[] aliases)
-        {
-            for (int i = 0; i < header.Length; i++)
-                if (aliases.Any(a => header[i].Contains(a, StringComparison.OrdinalIgnoreCase))) return i;
-            return -1;
-        }
-        int nameIx = FindCol(["patient name", "name", "full name"]);
-        int phoneIx = FindCol(["phone", "mobile", "mob", "contact", "mobile number", "phone number", "contact number"]);
-        int emailIx = FindCol(["email", "e-mail"]);
-        int ageIx = FindCol(["age", "years"]);
-        int genderIx = FindCol(["gender", "sex"]);
-        int deptIx = FindCol(["department", "dept", "specialty"]);
-        int srcIx = FindCol(["source", "inquiry source", "inquirysource"]);
-        int tagsIx = FindCol(["tags", "tag", "category"]);
-        int notesIx = FindCol(["notes", "note", "remarks", "comment"]);
-
-        if (nameIx < 0 || phoneIx < 0)
-        {
-            _logger.LogWarning("[ImportCSV] Could not find required Name/Phone columns. Header: {Header}", headerLine);
-            return new ImportResult(0, 0, 0, [new ImportSkipRecord(0, null, null, $"Header row missing Name/Phone columns. Found: {headerLine}")]);
-        }
-
-        int inserted = 0, skipped = 0, blankRows = 0, rowNum = 1;
-        var skipLog = new List<ImportSkipRecord>();
-        var seenPatients = new HashSet<(string Phone, string Name, int? Age, Gender Gender)>();
-
-        await _db.TransactionAsync(async tx =>
-        {
-            while (reader.Read())
-            {
-                rowNum++;
-                ct.ThrowIfCancellationRequested();
-                var c = ReadCells();
-                if (c.All(string.IsNullOrWhiteSpace)) { blankRows++; continue; }
-
-                var name = nameIx < c.Length ? c[nameIx].Trim() : null;
-                var phoneRaw = phoneIx < c.Length ? c[phoneIx].Trim() : null;
-                int? age = null;
-                if (ageIx >= 0 && ageIx < c.Length)
-                {
-                    var ageRaw = c[ageIx].Trim();
-                    if (ageRaw.EndsWith(".0")) ageRaw = ageRaw[..^2];
-                    if (int.TryParse(ageRaw, out var parsedAge)) age = parsedAge;
-                    else if (double.TryParse(ageRaw, out var parsedDouble)) age = (int)parsedDouble;
-                }
-
-                if (string.IsNullOrEmpty(name))
-                {
-                    var reason = "Missing Name";
-                    _logger.LogWarning("[ImportCSV] Row {Row} skipped – {Reason}: name='{Name}' phone='{Phone}'", rowNum, reason, name, phoneRaw);
-                    skipLog.Add(new ImportSkipRecord(rowNum, name, phoneRaw, reason));
-                    skipped++; continue;
-                }
-
-                var phone = WhatsappPhoneHelper.Normalize(phoneRaw);
-                if (!string.IsNullOrWhiteSpace(phoneRaw) && string.IsNullOrEmpty(phone))
-                {
-                    _logger.LogWarning("[ImportCSV] Row {Row} skipped – Invalid phone after normalize: '{PhoneRaw}'", rowNum, phoneRaw);
-                    skipLog.Add(new ImportSkipRecord(rowNum, name, phoneRaw, $"Invalid phone number: '{phoneRaw}'"));
-                    skipped++; continue;
-                }
-
-                var normalizedName = name.Trim();
-                var gender = genderIx >= 0 && genderIx < c.Length && Enum.TryParse<Gender>(c[genderIx].Trim(), true, out var g) ? g : Gender.Unknown;
-                var fileKey = (Phone: phone, Name: normalizedName.ToLowerInvariant(), Age: age, Gender: gender);
-                if (!seenPatients.Add(fileKey))
-                {
-                    _logger.LogWarning("[ImportCSV] Row {Row} skipped – Duplicate patient in file: name='{Name}' phone='{Phone}' age='{Age}' gender='{Gender}'", rowNum, name, phone, age?.ToString() ?? "null", gender);
-                    skipLog.Add(new ImportSkipRecord(rowNum, name, phoneRaw, $"Duplicate patient in file: {normalizedName}, {phone}, {age?.ToString() ?? "null"}, {gender}"));
-                    skipped++; continue;
-                }
-
-                var patientWhere = SqlFragments.WhereActive<Patient>(ignoreTenant: false);
-                var exists = await tx.QueryFirstOrDefaultAsync<Patient>(
-                    $"""SELECT * FROM "Patients" WHERE COALESCE("Phone", '') = @phone AND lower("Name") = lower(@name) AND ("Age" IS NOT DISTINCT FROM @age) AND "Gender" = @gender AND {patientWhere} LIMIT 1""",
-                    new { phone, name = normalizedName, age, gender }, ct: ct);
-                if (exists != null)
-                {
-                    _logger.LogWarning("[ImportCSV] Row {Row} skipped – Already exists in database: name='{Name}' phone='{Phone}' age='{Age}' gender='{Gender}'", rowNum, name, phone, age?.ToString() ?? "null", gender);
-                    skipLog.Add(new ImportSkipRecord(rowNum, name, phoneRaw, "Already exists in database (same Name, Phone, Age, and Gender)"));
-                    skipped++; continue;
-                }
-
-                var p = new Patient
-                {
-                    Name = name,
-                    Email = emailIx >= 0 && emailIx < c.Length && !string.IsNullOrWhiteSpace(c[emailIx]) ? c[emailIx] : null,
-                    Phone = phone,
-                    Age = age,
-                    Gender = gender,
-                    Department = deptIx >= 0 && deptIx < c.Length ? c[deptIx].Trim() : null,
-                    InquirySource = srcIx >= 0 && srcIx < c.Length && !string.IsNullOrWhiteSpace(c[srcIx]) ? c[srcIx].Trim() : "csv_import",
-                    Tags = tagsIx >= 0 && tagsIx < c.Length ? c[tagsIx].Split(';').Select(t => t.Trim()).Where(t => !string.IsNullOrEmpty(t)).ToList() : new(),
-                    Notes = notesIx >= 0 && notesIx < c.Length ? c[notesIx].Trim() : null,
-                };
-                await tx.InsertAsync(p, ct: ct);
-                _logger.LogInformation("[ImportCSV] Row {Row} inserted: name='{Name}' phone='{Phone}'", rowNum, name, phone);
-                inserted++;
-            }
-        }, ct);
-
-        _logger.LogInformation("[ImportCSV] Complete: {Inserted} inserted, {Skipped} skipped, {Blank} blank rows", inserted, skipped, blankRows);
-        await _audit.LogAsync("patient.import_csv", "patient", null, new { inserted, skipped, blankRows }, ct);
-        return new ImportResult(inserted, skipped, blankRows, skipLog);
-    }
-
-    public async Task<ImportResult> ImportExcelAsync(Stream stream, string fileExtension, CancellationToken ct = default)
-    {
-        var ext = fileExtension?.ToLowerInvariant();
-        if (ext == ".csv")
-        {
-            return await ImportCsvAsync(stream, ct);
-        }
-
-        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-
-        using var reader = ExcelReaderFactory.CreateReader(stream);
-
-        // Read ALL rows with UseHeaderRow=false so we have full control over header detection
-        var result = reader.AsDataSet(new ExcelDataSetConfiguration
-        {
-            ConfigureDataTable = (_) => new ExcelDataTableConfiguration
-            {
-                UseHeaderRow = false
-            }
-        });
-
-        if (result.Tables.Count == 0) return new ImportResult(0, 0, 0, []);
-        var table = result.Tables[0];
-        if (table.Rows.Count < 2) return new ImportResult(0, 0, 0, []);
-
-        // --- Flexible header detection: scan up to first 5 rows for a row that has "name" and phone-like col ---
-        int headerRowIndex = -1;
-        int nameIx = -1, phoneIx = -1, emailIx = -1, ageIx = -1, genderIx = -1,
-            deptIx = -1, srcIx = -1, tagsIx = -1, notesIx = -1;
-
-        static bool MatchesColumn(string col, string[] keywords)
-            => keywords.Any(k => col.Contains(k, StringComparison.OrdinalIgnoreCase));
-
-        for (int rowIdx = 0; rowIdx < Math.Min(5, table.Rows.Count); rowIdx++)
-        {
-            var row = table.Rows[rowIdx];
-            int tempName = -1, tempPhone = -1;
-            for (int c = 0; c < table.Columns.Count; c++)
-            {
-                var cell = row[c]?.ToString()?.Trim() ?? "";
-                if (string.IsNullOrWhiteSpace(cell)) continue;
-
-                // Name column aliases
-                if (tempName < 0 && MatchesColumn(cell,
-                    ["patient name", "patientname", "name", "full name", "fullname", "नाम"]))
-                    tempName = c;
-
-                // Phone column aliases
-                if (tempPhone < 0 && MatchesColumn(cell,
-                    ["phone", "mobile", "mob", "contact", "cell", "phone no", "mobile no", "ph no",
-                     "phone number", "mobile number", "contact number", "फ़ोन", "मोबाइल"]))
-                    tempPhone = c;
-            }
-
-            // This row looks like a header
-            if (tempName >= 0 && tempPhone >= 0)
-            {
-                headerRowIndex = rowIdx;
-                nameIx = tempName;
-                phoneIx = tempPhone;
-
-                // Now map remaining columns
-                for (int c = 0; c < table.Columns.Count; c++)
-                {
-                    if (c == nameIx || c == phoneIx) continue;
-                    var cell = row[c]?.ToString()?.Trim() ?? "";
-                    if (string.IsNullOrWhiteSpace(cell)) continue;
-
-                    if (emailIx < 0 && MatchesColumn(cell, ["email", "e-mail", "mail", "ईमेल"]))
-                        emailIx = c;
-                    else if (ageIx < 0 && MatchesColumn(cell, ["age", "years", "yr", "उम्र", "आयु"]))
-                        ageIx = c;
-                    else if (genderIx < 0 && MatchesColumn(cell,
-                        ["gender", "sex", "m/f", "m/f/o", "लिंग"]))
-                        genderIx = c;
-                    else if (deptIx < 0 && MatchesColumn(cell,
-                        ["department", "dept", "specialty", "speciality", "विभाग"]))
-                        deptIx = c;
-                    else if (srcIx < 0 && MatchesColumn(cell,
-                        ["source", "inquiry source", "inquirysource", "inquiry_source", "referred by", "referral"]))
-                        srcIx = c;
-                    else if (tagsIx < 0 && MatchesColumn(cell, ["tags", "tag", "category", "label"]))
-                        tagsIx = c;
-                    else if (notesIx < 0 && MatchesColumn(cell,
-                        ["notes", "note", "remarks", "remark", "comment", "comments", "description"]))
-                        notesIx = c;
-                }
-                break;
-            }
-        }
-
-        // Fallback: if no header found but we have columns, treat row 0 as header by position
-        // (Name=col0, Phone=col1)
-        if (headerRowIndex < 0 && table.Columns.Count >= 2)
-        {
-            headerRowIndex = 0;
-            nameIx = 0;
-            phoneIx = 1;
-            if (table.Columns.Count > 2) ageIx = 2;
-            if (table.Columns.Count > 3) genderIx = 3;
-            if (table.Columns.Count > 4) deptIx = 4;
-        }
-
-        if (headerRowIndex < 0 || nameIx < 0 || phoneIx < 0)
-        {
-            _logger.LogWarning("[ImportExcel] Could not detect Name/Phone header columns in first 5 rows");
-            return new ImportResult(0, 0, 0, [new ImportSkipRecord(0, null, null, "Could not find Name and Phone columns in file header")]);
-        }
-
-        _logger.LogInformation("[ImportExcel] Header found at row {HeaderRow}. nameIx={N} phoneIx={P} ageIx={A} genderIx={G} deptIx={D}",
-            headerRowIndex, nameIx, phoneIx, ageIx, genderIx, deptIx);
-
-        int inserted = 0, skipped = 0, blankRows = 0;
-        var skipLog = new List<ImportSkipRecord>();
-        var seenPatients = new HashSet<(string Phone, string Name, int? Age, Gender Gender)>();
-
-        await _db.TransactionAsync(async tx =>
-        {
-            for (int rowIdx = headerRowIndex + 1; rowIdx < table.Rows.Count; rowIdx++)
-            {
-                int excelRow = rowIdx + 1; // 1-based for user display
-                var row = table.Rows[rowIdx];
-
-                // Skip fully blank rows
-                var isBlank = true;
-                for (int c = 0; c < table.Columns.Count; c++)
-                {
-                    if (!string.IsNullOrWhiteSpace(row[c]?.ToString())) { isBlank = false; break; }
-                }
-                if (isBlank) { blankRows++; continue; }
-
-                var name = row[nameIx]?.ToString()?.Trim();
-                var phoneRaw = row[phoneIx]?.ToString()?.Trim();
-                int? parsedAge = null;
-                if (ageIx >= 0 && row[ageIx] != null)
-                {
-                    var ageRaw = row[ageIx].ToString()?.Trim() ?? "";
-                    if (ageRaw.EndsWith(".0")) ageRaw = ageRaw[..^2];
-                    if (int.TryParse(ageRaw, out var a)) parsedAge = a;
-                    else if (double.TryParse(ageRaw, out var ad)) parsedAge = (int)ad;
-                }
-
-                if (string.IsNullOrEmpty(name))
-                {
-                    var reason = "Missing Name";
-                    _logger.LogWarning("[ImportExcel] Row {Row} skipped – {Reason}: name='{Name}' phone='{Phone}'", excelRow, reason, name, phoneRaw);
-                    skipLog.Add(new ImportSkipRecord(excelRow, name, phoneRaw, reason));
-                    skipped++; continue;
-                }
-
-                // Strip Excel numeric trailing decimal (9876543210.0 → 9876543210)
-                if (!string.IsNullOrEmpty(phoneRaw) && phoneRaw.EndsWith(".0")) phoneRaw = phoneRaw[..^2];
-
-                // Handle scientific notation (e.g. 9.87654321E+09)
-                if (!string.IsNullOrEmpty(phoneRaw) && phoneRaw.Contains('E', StringComparison.OrdinalIgnoreCase)
-                    && double.TryParse(phoneRaw, System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture, out var phoneDbl))
-                {
-                    phoneRaw = ((long)phoneDbl).ToString();
-                }
-
-                var phone = WhatsappPhoneHelper.Normalize(phoneRaw ?? string.Empty);
-                if (!string.IsNullOrWhiteSpace(phoneRaw) && string.IsNullOrEmpty(phone))
-                {
-                    _logger.LogWarning("[ImportExcel] Row {Row} skipped – Invalid phone after normalize: raw='{Raw}'", excelRow, phoneRaw);
-                    skipLog.Add(new ImportSkipRecord(excelRow, name, phoneRaw, $"Invalid phone number: '{phoneRaw}'"));
-                    skipped++; continue;
-                }
-
-                var normalizedName = name.Trim();
-                var gender = Gender.Unknown;
-                if (genderIx >= 0 && row[genderIx] != null)
-                {
-                    var g = row[genderIx].ToString()?.Trim()?.ToLowerInvariant() ?? "";
-                    if (g is "m" or "male" or "पुरुष") gender = Gender.Male;
-                    else if (g is "f" or "female" or "महिला" or "lady") gender = Gender.Female;
-                    else if (g is "o" or "other") gender = Gender.Other;
-                }
-                var fileKey = (Phone: phone, Name: normalizedName.ToLowerInvariant(), Age: parsedAge, Gender: gender);
-                if (!seenPatients.Add(fileKey))
-                {
-                    _logger.LogWarning("[ImportExcel] Row {Row} skipped – Duplicate patient in file: name='{Name}' phone='{Phone}' age='{Age}' gender='{Gender}'", excelRow, name, phone, parsedAge?.ToString() ?? "null", gender);
-                    skipLog.Add(new ImportSkipRecord(excelRow, name, phoneRaw, $"Duplicate patient in file: {normalizedName}, {phone}, {parsedAge?.ToString() ?? "null"}, {gender}"));
-                    skipped++; continue;
-                }
-
-                // Check if patient already exists in DB (current tenant)
-                var patientWhere = SqlFragments.WhereActive<Patient>(ignoreTenant: false);
-                var exists = await tx.QueryFirstOrDefaultAsync<Patient>(
-                    $"""SELECT * FROM "Patients" WHERE COALESCE("Phone", '') = @phone AND lower("Name") = lower(@name) AND ("Age" IS NOT DISTINCT FROM @age) AND "Gender" = @gender AND {patientWhere} LIMIT 1""",
-                    new { phone, name = normalizedName, age = parsedAge, gender }, ct: ct);
-                if (exists != null)
-                {
-                    _logger.LogWarning("[ImportExcel] Row {Row} skipped – Already exists in DB: name='{Name}' phone='{Phone}' age='{Age}' gender='{Gender}'", excelRow, name, phone, parsedAge?.ToString() ?? "null", gender);
-                    skipLog.Add(new ImportSkipRecord(excelRow, name, phoneRaw, "Already exists in database (same Name, Phone, Age, and Gender)"));
-                    skipped++; continue;
-                }
-
-                var p = new Patient
-                {
-                    Name = name,
-                    Phone = phone,
-                    Email = emailIx >= 0 ? row[emailIx]?.ToString()?.Trim() : null,
-                    Age = parsedAge,
-                    Gender = gender,
-                    Department = deptIx >= 0 ? row[deptIx]?.ToString()?.Trim() : null,
-                    InquirySource = srcIx >= 0 && !string.IsNullOrWhiteSpace(row[srcIx]?.ToString())
-                        ? row[srcIx]?.ToString()?.Trim()!
-                        : "excel_import",
-                    Tags = tagsIx >= 0 && !string.IsNullOrWhiteSpace(row[tagsIx]?.ToString())
-                        ? row[tagsIx]?.ToString()!.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
-                            .Select(t => t.Trim()).ToList()!
-                        : new List<string>(),
-                    Notes = notesIx >= 0 ? row[notesIx]?.ToString()?.Trim() : null,
-                };
-                await tx.InsertAsync(p, ct: ct);
-                _logger.LogInformation("[ImportExcel] Row {Row} inserted: name='{Name}' phone='{Phone}'", excelRow, name, phone);
-                inserted++;
-            }
-        }, ct);
-
-        _logger.LogInformation("[ImportExcel] Complete: {Inserted} inserted, {Skipped} skipped, {Blank} blank rows. Skip reasons: {SkipLog}",
-            inserted, skipped, blankRows,
-            string.Join(" | ", skipLog.Take(20).Select(s => $"R{s.RowNumber}:{s.Reason}")));
-
-        await _audit.LogAsync("patient.import_excel", "patient", null, new { inserted, skipped, blankRows }, ct);
-        return new ImportResult(inserted, skipped, blankRows, skipLog);
-    }
-
-
+    public Task<ImportResult> ImportCsvAsync(Stream csv, CancellationToken ct = default)
+        =>throw new ConflictException("Use the reviewed /api/patient-imports preview and per-row decision workflow.");
+    public Task<ImportResult> ImportExcelAsync(Stream stream, string fileExtension, CancellationToken ct = default)
+        =>throw new ConflictException("Use the reviewed /api/patient-imports preview and per-row decision workflow.");
     private static PatientDetailDto MapDetail(Patient p) => new(
         p.Id, p.Name, p.Phone, p.Email, p.EmailNotificationsEnabled, p.Age, p.Gender, p.BloodGroup,
         p.DateOfBirth,
@@ -632,7 +441,7 @@ public class PatientService : IPatientService
         p.InquirySource, p.ReferralDoctor,
         p.LastContactAt, p.FollowUpDate,
         p.AiSummary, p.AiLeadScore,
-        p.CreatedAt, p.UpdatedAt, p.SourceLeadId);
+        p.CreatedAt, p.UpdatedAt, p.SourceLeadId) {ConcurrencyTag=PatientConcurrency.Tag(p),BirthDate=new(p.BirthDatePrecision,p.BirthDateYear,p.BirthDateMonth,p.BirthDateDay)};
 
     private static LifestyleProfileDto MapLifestyle(LifestyleProfile l) => new(
         l.PatientId,
@@ -664,4 +473,16 @@ public class PatientService : IPatientService
             j.BatchNumber, j.ExpiryDate,
             j.ReasonForInjection, j.AdverseReaction, j.Notes)).ToList());
 
-}
+    private static Task<int> SetDemographicSourceAsync(ICureFlowDbSession store,DemographicSourceInput? source,CancellationToken ct)
+        =>store.ExecuteAsync("""
+            SELECT set_config('app.demographic_source_type',@type,true),
+              set_config('app.demographic_source_reference',@reference,true),
+              set_config('app.demographic_reason',@reason,true)
+            """,new{type=source?.SourceType??"local_application",reference=source?.SourceReference?.Trim()??"",reason=source?.Reason.Trim()??"Local application demographic command"},ct:ct);    private async Task RequirePatientWriteAsync(ICureFlowDbSession store,string capability,CancellationToken ct)
+    {
+        if(!_tenant.IsAuthenticated||_tenant.IsPlatformUser||_tenant.TenantId==Guid.Empty||!_tenant.UserId.HasValue)throw new ForbiddenException();
+        var actor=await store.QueryFirstOrDefaultAsync<User>("""
+            SELECT * FROM "Users" WHERE "TenantId"=@TenantId AND "Id"=@Id AND "IsActive" AND NOT "IsDeleted" FOR SHARE
+            """,new{Id=_tenant.UserId},ct:ct);
+        if(actor is null||!(await _permissions.GetPermissionCodesAsync(actor,ct,store)).Contains(capability,StringComparer.Ordinal))throw new ForbiddenException();
+    }}

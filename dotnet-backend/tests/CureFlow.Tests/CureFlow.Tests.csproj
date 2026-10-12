@@ -21,4 +21,7 @@
     <ProjectReference Include="..\..\src\CureFlow.Application\CureFlow.Application.csproj" />
     <ProjectReference Include="..\..\src\CureFlow.Infrastructure\CureFlow.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
 </Project>
